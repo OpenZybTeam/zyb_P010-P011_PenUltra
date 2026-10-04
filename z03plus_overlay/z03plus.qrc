@@ -2,6 +2,8 @@
   <qresource prefix="/ZybQmlFiles/ZybSet">
     <file alias="SetMainPage.qml">SetMainPage.qml</file>
     <file alias="Z03PlusPage.qml">Z03PlusPage.qml</file>
+    <file alias="ScreenTimeoutPage.qml">ScreenTimeoutPage.qml</file>
     <file alias="SshPage.qml">SshPage.qml</file>
+    <!-- File manager and text reader are embedded in Z03PlusPage.qml. -->
   </qresource>
 </RCC>
