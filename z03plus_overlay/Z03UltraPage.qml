@@ -2,21 +2,32 @@ import QtQuick 2.0
 import QtQuick.Controls 2.3
 import QtQuick.Layouts 1.3
 import QtQuick.Window 2.0
-import QtQuick.VirtualKeyboard 2.0
 import "../Funcs/UILogics.js" as UILogic
 import "../ZybControls/"
+import "../ZybVirturlKeyBoard"
 import "../Style"
-import Z03Plus 1.0
+import Z03Ultra 1.0
 
 Rectangle {
     id: root
-    anchors.fill: parent
+    width: parent ? parent.width : 0
+    height: parent ? parent.height : 0
     color: "#0F0F0F"
     property color cardColor: Qt.rgba(60/255, 61/255, 66/255, 0.6)
     property bool sshPageVisible: false
     property bool fileManagerVisible: false
     property bool readerVisible: false
     property bool screenTimeoutVisible: false
+    property bool displayPageVisible: false
+    property bool storagePageVisible: false
+    property bool musicPageVisible: false
+    property bool recorderPageVisible: false
+    property bool shellPageVisible: false
+    property bool nixPageVisible: false
+    property bool deviceInfoPageVisible: false
+    property bool browserPageVisible: false
+    property string displayTimeoutText: "读取中…"
+    property string displayStatus: ""
     property bool aiPageVisible: false
     property string aiInput: ""
     property bool aiBusy: false
@@ -48,6 +59,28 @@ property bool aiHistoryVisible: false
     FileService { id: fileService }
     TextFileService { id: textFileService }
     VoiceService { id: voiceService }
+
+    // 复用原厂内置键盘，避免依赖设备缺失的 QtQuick.VirtualKeyboard。
+    ZybKeyBoard {
+        id: overlayKeyboard
+        z: 300
+        width: root.width
+        height: root.height
+        y: Style.gHeight
+        visible: y < Style.gHeight
+        onCommitInput: {
+            if (root.aiPageVisible) {
+                root.aiInput = t1
+                aiInputField.text = t1
+                aiInputField.cursorPosition = t1.length
+            }
+            if (root.renameDialogVisible) {
+                root.renameValue = t1
+                renameInput.text = t1
+                renameInput.cursorPosition = t1.length
+            }
+        }
+    }
     // 语音输入走本地桥接（bridge.mjs /api/voice/*），录音后由宿主机 Vosk 离线识别。
 
     Timer {
@@ -91,7 +124,7 @@ property bool aiHistoryVisible: false
     }
 
     ZybText {
-        text: qsTr("Z03Plus 扩展 · FM3")
+        text: qsTr("Z03Ultra 扩展 · FM3")
         font.styleName: "Bold"
         anchors.horizontalCenter: parent.horizontalCenter
         anchors.verticalCenter: backButton.verticalCenter
@@ -144,7 +177,7 @@ property bool aiHistoryVisible: false
                 radius: 8
                 checkable: false
                 backgroundTheme: root.cardColor
-                onClicked: showTip(qsTr("数据目录：/home/user  和  /mnt/data"))
+                onClicked: root.storagePageVisible = true
             }
             BasicButton {
                 text: qsTr("AI 对话")
@@ -162,7 +195,7 @@ property bool aiHistoryVisible: false
                 radius: 8
                 checkable: false
                 backgroundTheme: root.cardColor
-                onClicked: StackView.view.push("qrc:/ZybQmlFiles/ZybSet/SetLightPage.qml")
+                onClicked: root.openDisplayPage()
             }
             BasicButton {
                 text: qsTr("ADB / SSH")
@@ -180,7 +213,7 @@ property bool aiHistoryVisible: false
                 radius: 8
                 checkable: false
                 backgroundTheme: root.cardColor
-                onClicked: showTip(qsTr("播放器正在接入 /mnt/data 媒体文件"))
+                onClicked: root.musicPageVisible = true
             }
             BasicButton {
                 text: qsTr("录音")
@@ -189,7 +222,7 @@ property bool aiHistoryVisible: false
                 radius: 8
                 checkable: false
                 backgroundTheme: root.cardColor
-                onClicked: showTip(qsTr("录音功能正在适配"))
+                onClicked: root.recorderPageVisible = true
             }
             BasicButton {
                 text: qsTr("息屏时间")
@@ -198,9 +231,43 @@ property bool aiHistoryVisible: false
                 radius: 8
                 checkable: false
                 backgroundTheme: root.cardColor
-                onClicked: {
-                    root.screenTimeoutVisible = true
-                }
+                onClicked: root.openDisplayPage()
+            }
+            BasicButton {
+                text: qsTr("终端 Shell")
+                implicitWidth: (featureList.width - 12) / 2
+                implicitHeight: 62
+                radius: 8
+                checkable: false
+                backgroundTheme: root.cardColor
+                onClicked: root.shellPageVisible = true
+            }
+            BasicButton {
+                text: qsTr("应用商店")
+                implicitWidth: (featureList.width - 12) / 2
+                implicitHeight: 62
+                radius: 8
+                checkable: false
+                backgroundTheme: root.cardColor
+                onClicked: root.nixPageVisible = true
+            }
+            BasicButton {
+                text: qsTr("网页浏览")
+                implicitWidth: (featureList.width - 12) / 2
+                implicitHeight: 62
+                radius: 8
+                checkable: false
+                backgroundTheme: root.cardColor
+                onClicked: root.browserPageVisible = true
+            }
+            BasicButton {
+                text: qsTr("关于设备")
+                implicitWidth: (featureList.width - 12) / 2
+                implicitHeight: 62
+                radius: 8
+                checkable: false
+                backgroundTheme: root.cardColor
+                onClicked: root.deviceInfoPageVisible = true
             }
         }
     }
@@ -212,6 +279,62 @@ property bool aiHistoryVisible: false
         active: root.screenTimeoutVisible
         source: active ? "qrc:/ZybQmlFiles/ZybSet/ScreenTimeoutPage.qml" : ""
         onLoaded: if (item) item.closeRequested.connect(function() { root.screenTimeoutVisible = false })
+    }
+    Loader {
+        id: storageLoader
+        anchors.fill: parent
+        z: 55
+        active: root.storagePageVisible
+        source: active ? "qrc:/ZybQmlFiles/ZybSet/StoragePage.qml" : ""
+        onLoaded: if (item) item.closeRequested.connect(function() { root.storagePageVisible = false })
+    }
+    Loader {
+        id: musicLoader
+        anchors.fill: parent
+        z: 55
+        active: root.musicPageVisible
+        source: active ? "qrc:/ZybQmlFiles/ZybSet/MusicPage.qml" : ""
+        onLoaded: if (item) item.closeRequested.connect(function() { root.musicPageVisible = false })
+    }
+    Loader {
+        id: recorderLoader
+        anchors.fill: parent
+        z: 55
+        active: root.recorderPageVisible
+        source: active ? "qrc:/ZybQmlFiles/ZybSet/RecorderPage.qml" : ""
+        onLoaded: if (item) item.closeRequested.connect(function() { root.recorderPageVisible = false })
+    }
+    Loader {
+        id: shellLoader
+        anchors.fill: parent
+        z: 55
+        active: root.shellPageVisible
+        source: active ? "qrc:/ZybQmlFiles/ZybSet/ShellPage.qml" : ""
+        onLoaded: if (item) item.closeRequested.connect(function() { root.shellPageVisible = false })
+    }
+    Loader {
+        id: nixLoader
+        anchors.fill: parent
+        z: 55
+        active: root.nixPageVisible
+        source: active ? "qrc:/ZybQmlFiles/ZybSet/NixStorePage.qml" : ""
+        onLoaded: if (item) item.closeRequested.connect(function() { root.nixPageVisible = false })
+    }
+    Loader {
+        id: browserLoader
+        anchors.fill: parent
+        z: 55
+        active: root.browserPageVisible
+        source: active ? "qrc:/ZybQmlFiles/ZybSet/BrowserPage.qml" : ""
+        onLoaded: if (item) item.closeRequested.connect(function() { root.browserPageVisible = false })
+    }
+    Loader {
+        id: deviceInfoLoader
+        anchors.fill: parent
+        z: 55
+        active: root.deviceInfoPageVisible
+        source: active ? "qrc:/ZybQmlFiles/ZybSet/DeviceInfoPage.qml" : ""
+        onLoaded: if (item) item.closeRequested.connect(function() { root.deviceInfoPageVisible = false })
     }
     Rectangle {
         id: sshPage
@@ -275,11 +398,12 @@ property bool aiHistoryVisible: false
             ZybText { text: qsTr("端口：") + root.sshPort }
             ZybText { text: qsTr("用户名：") + root.sshUser }
             ZybText { text: qsTr("公钥：") + root.sshKeyStatus }
+            ZybText { text: qsTr("root 登录：") + root.sshRoot }
             ZybText { text: qsTr("连接命令：") + root.sshCommand; wrapMode: Text.WrapAnywhere }
             ZybText {
                 width: parent.width; color: "#B8B8B8"; font.pixelSize: 18
                 wrapMode: Text.WordWrap
-                text: qsTr("使用 SSH 公钥免密码登录；仅允许 user 登录，root 的 SSH 登录已禁用。")
+                text: qsTr("使用 SSH 公钥免密码登录；user 与 root 均可登录。若 root 显示已禁用，请在设备执行 sh /home/user/z03plus/setup_ssh.sh；root 密码登录需先执行 passwd root。")
             }
             }
         }
@@ -290,6 +414,80 @@ property bool aiHistoryVisible: false
     property string sshPort: "22"
     property string sshUser: "user"
     property string sshKeyStatus: "未配置"
+    property string sshRoot: "未知"
+    property bool displayInit: false
+
+    Rectangle {
+        id: displayPage
+        visible: root.displayPageVisible
+        z: 26
+        anchors.fill: parent
+        color: "#0F0F0F"
+
+        ZybBackButton {
+            id: displayBackButton
+            anchors.top: parent.top; anchors.topMargin: 10
+            anchors.left: parent.left; anchors.leftMargin: 10
+            onBackClicked: root.displayPageVisible = false
+        }
+        ZybText {
+            text: qsTr("显示与灯光")
+            font.styleName: "Bold"
+            anchors.horizontalCenter: parent.horizontalCenter
+            anchors.verticalCenter: displayBackButton.verticalCenter
+        }
+
+        Flickable {
+            anchors.left: parent.left; anchors.leftMargin: 28
+            anchors.right: parent.right; anchors.rightMargin: 28
+            anchors.top: parent.top; anchors.topMargin: 64
+            anchors.bottom: parent.bottom; anchors.bottomMargin: 12
+            clip: true
+            contentWidth: width
+            contentHeight: displayColumn.height + 10
+            flickableDirection: Flickable.VerticalFlick
+            Column {
+                id: displayColumn
+                width: parent.width
+                spacing: 12
+                ZybText { text: qsTr("亮度") }
+                BasicSlider {
+                    id: brightnessSlider
+                    width: parent.width
+                    height: 64
+                    from: 0
+                    to: 1
+                    leftImageSource: "qrc:/images/control_icon_bright_low.png"
+                    rightImageSource: "qrc:/images/control_icon_bright_high.png"
+                    rightImageVisible: true
+                    incompleteColor: "#993C3D42"
+                    onPositionChanged: {
+                        if (root.displayInit) return
+                        try {
+                            if (typeof engineSocket !== "undefined" && engineSocket.sendLightChanged)
+                                engineSocket.sendLightChanged(position)
+                        } catch (e) {}
+                    }
+                }
+                ZybText { text: qsTr("自动息屏：") + root.displayTimeoutText }
+                BasicButton { width: parent.width; height: 54; text: qsTr("30 秒"); checkable: false; backgroundTheme: root.cardColor; onClicked: root.setDisplayTimeout(30, qsTr("30 秒")) }
+                BasicButton { width: parent.width; height: 54; text: qsTr("1 分钟"); checkable: false; backgroundTheme: root.cardColor; onClicked: root.setDisplayTimeout(60, qsTr("1 分钟")) }
+                BasicButton { width: parent.width; height: 54; text: qsTr("3 分钟"); checkable: false; backgroundTheme: root.cardColor; onClicked: root.setDisplayTimeout(180, qsTr("3 分钟")) }
+                BasicButton { width: parent.width; height: 54; text: qsTr("5 分钟"); checkable: false; backgroundTheme: root.cardColor; onClicked: root.setDisplayTimeout(300, qsTr("5 分钟")) }
+                BasicButton { width: parent.width; height: 54; text: qsTr("10 分钟"); checkable: false; backgroundTheme: root.cardColor; onClicked: root.setDisplayTimeout(600, qsTr("10 分钟")) }
+                BasicButton { width: parent.width; height: 54; text: qsTr("30 分钟"); checkable: false; backgroundTheme: root.cardColor; onClicked: root.setDisplayTimeout(1800, qsTr("30 分钟")) }
+                BasicButton { width: parent.width; height: 54; text: qsTr("60 分钟"); checkable: false; backgroundTheme: root.cardColor; onClicked: root.setDisplayTimeout(3600, qsTr("60 分钟")) }
+                ZybText {
+                    width: parent.width
+                    text: qsTr("亮度与息屏时间直接调用原厂引擎接口，立即生效。")
+                    color: "#777A82"
+                    wrapMode: Text.WordWrap
+                }
+                ZybText { text: root.displayStatus; color: "#31C7A5"; wrapMode: Text.WordWrap }
+            }
+        }
+    }
+
     Rectangle {
         id: filePage
         visible: root.fileManagerVisible
@@ -341,7 +539,17 @@ property bool aiHistoryVisible: false
         Rectangle {
             width: parent.width - 48; height: 190; radius: 10; color: "#292A2E"; anchors.centerIn: parent
             ZybText { text: qsTr("重命名"); anchors.top: parent.top; anchors.topMargin: 16; anchors.left: parent.left; anchors.leftMargin: 20 }
-            Rectangle { anchors.left: parent.left; anchors.leftMargin: 20; anchors.right: parent.right; anchors.rightMargin: 20; anchors.top: parent.top; anchors.topMargin: 55; height: 46; radius: 5; color: "#151619"; TextInput { id: renameInput; anchors.fill: parent; anchors.margins: 8; color: "white"; font.pixelSize: 19; text: root.renameValue; selectByMouse: true; onTextChanged: root.renameValue = text } }
+            Rectangle {
+                anchors.left: parent.left; anchors.leftMargin: 20; anchors.right: parent.right; anchors.rightMargin: 20; anchors.top: parent.top; anchors.topMargin: 55; height: 46; radius: 5; color: "#151619"
+                TextInput { id: renameInput; anchors.fill: parent; anchors.margins: 8; color: "white"; font.pixelSize: 19; text: root.renameValue; selectByMouse: true; onTextChanged: root.renameValue = text }
+                MouseArea {
+                    anchors.fill: parent
+                    onClicked: {
+                        renameInput.forceActiveFocus()
+                        overlayKeyboard.showKeyboard()
+                    }
+                }
+            }
             BasicButton { text: qsTr("取消"); anchors.left: parent.left; anchors.leftMargin: 20; anchors.bottom: parent.bottom; anchors.bottomMargin: 16; width: 110; height: 48; radius: 7; checkable: false; backgroundTheme: root.cardColor; onClicked: root.renameDialogVisible = false }
 BasicButton { text: qsTr("确定"); anchors.right: parent.right; anchors.rightMargin: 20; anchors.bottom: parent.bottom; anchors.bottomMargin: 16; width: 110; height: 48; radius: 7; checkable: false; backgroundTheme: root.cardColor; onClicked: { if (root.selectedFile && fileService.rename(root.selectedFile.path, root.renameValue)) root.openFiles(root.currentPath); else root.fileStatus = qsTr("重命名失败"); root.renameDialogVisible = false } }
             Component.onCompleted: if (root.renameDialogVisible) renameInput.forceActiveFocus()
@@ -412,8 +620,8 @@ BasicButton { text: qsTr("确定"); anchors.right: parent.right; anchors.rightMa
                     onPaint: { var c=getContext("2d"); c.strokeStyle="#EEEEEE"; c.lineWidth=2; c.lineCap="round"; c.beginPath(); c.arc(width/2,height/2,width*0.34,Math.PI*0.3,Math.PI*1.9); c.stroke(); c.beginPath(); c.moveTo(width*0.2,height*0.32); c.lineTo(width*0.24,height*0.14); c.lineTo(width*0.36,height*0.24); c.stroke() } }
                 MouseArea { anchors.fill: parent; onClicked: {
                     root.aiServiceOnline = false
+                    aiReconnectTimer.ticks = 0
                     aiReconnectTimer.restart()
-                    sshService.restartAi()
                 } }
                 Timer {
                     id: aiReconnectTimer
@@ -488,7 +696,7 @@ BasicButton { text: qsTr("确定"); anchors.right: parent.right; anchors.rightMa
             anchors.right: parent.right; anchors.rightMargin: 8
             anchors.bottom: aiInputBox.top; anchors.bottomMargin: 6
             spacing: 6
-            visible: !Qt.inputMethod.visible && root.aiMessages.length === 0
+            visible: root.aiMessages.length === 0
             height: visible ? 26 : 0
             Repeater {
                 model: [qsTr("你好"), qsTr("今天天气"), qsTr("讲个笑话")]
@@ -503,13 +711,20 @@ BasicButton { text: qsTr("确定"); anchors.right: parent.right; anchors.rightMa
         // 输入区
         Rectangle {
             id: aiInputBox; anchors.left: parent.left; anchors.leftMargin: 56; anchors.right: parent.right; anchors.rightMargin: 8; anchors.bottom: parent.bottom
-            anchors.bottomMargin: Qt.inputMethod.visible ? (virtualKeyboard.height + 6) : 8
+            anchors.bottomMargin: 8
             height: 44; radius: 10; color: "#292A2E"
             TextInput {
                 id: aiInputField; anchors.left: parent.left; anchors.leftMargin: 10; anchors.right: aiScan.left; anchors.rightMargin: 6; anchors.verticalCenter: parent.verticalCenter
                 color: "#F2F2F2"; font.pixelSize: 15; clip: true; selectByMouse: true
                 activeFocusOnPress: true
                 text: root.aiInput; onTextChanged: root.aiInput = text
+            }
+            MouseArea {
+                anchors.fill: aiInputField
+                onClicked: {
+                    aiInputField.forceActiveFocus()
+                    overlayKeyboard.showKeyboard()
+                }
             }
             ZybText { visible: aiInputField.text.length === 0; text: qsTr("输入问题…"); color: "#999999"; font.pixelSize: 15; anchors.left: aiInputField.left; anchors.leftMargin: 10; anchors.verticalCenter: aiInputField.verticalCenter }
             BasicButton {
@@ -791,12 +1006,10 @@ BasicButton { text: qsTr("确定"); anchors.right: parent.right; anchors.rightMa
         function consumeStream() {
             var all = xhr.responseText || ""
             var part = all.slice(consumed)
-            var lastNl = part.lastIndexOf("
-")
+            var lastNl = part.lastIndexOf("\n")
             if (lastNl < 0) return
             consumed += lastNl + 1
-            var lines = part.slice(0, lastNl).split("
-")
+            var lines = part.slice(0, lastNl).split("\n")
             for (var i = 0; i < lines.length; i++) {
                 if (!lines[i]) continue
                 try {
@@ -927,14 +1140,61 @@ BasicButton { text: qsTr("确定"); anchors.right: parent.right; anchors.rightMa
 
     function loadSshStatus() {
         var values = sshService.status()
-        if (!values || !values.running)
+        if (!values || values.running === undefined) {
+            root.sshRunning = qsTr("未知")
+            root.sshIp = qsTr("读取失败，点刷新重试")
+            root.sshPort = "22"
+            root.sshUser = "user"
+            root.sshKeyStatus = qsTr("未配置")
+            root.sshRoot = qsTr("未知")
+            root.sshCommand = qsTr("请检查 update_ssh_status.sh 是否存在")
             return
+        }
         root.sshRunning = values.running === "on" ? qsTr("已开启") : qsTr("未开启")
         root.sshIp = values.ip || qsTr("未连接 Wi-Fi")
         root.sshPort = values.port || "22"
         root.sshUser = values.user || "user"
         root.sshKeyStatus = values.key_status || qsTr("未配置")
+        root.sshRoot = values.root_login || qsTr("未知")
         root.sshCommand = values.command || ""
+    }
+
+    function openDisplayPage() {
+        root.displayStatus = ""
+        root.displayPageVisible = true
+        root.displayInit = true
+        try {
+            if (typeof devManager !== "undefined" && devManager.getLightVal)
+                brightnessSlider.value = devManager.getLightVal()
+            var index = (typeof devManager !== "undefined" && devManager.getLightIndex)
+                ? devManager.getLightIndex() : 0
+            root.displayTimeoutText = index === 2 ? qsTr("1 分钟")
+                : index === 3 ? qsTr("3 分钟")
+                : qsTr("30 秒")
+        } catch (e) {
+            root.displayTimeoutText = qsTr("原厂设置")
+        }
+        root.displayInit = false
+    }
+
+    function setDisplayTimeout(seconds, label) {
+        root.displayTimeoutText = label
+        try {
+            if (typeof engineSocket !== "undefined" && engineSocket.sendOffScreenTime) {
+                engineSocket.sendOffScreenTime(seconds)
+            } else {
+                root.displayStatus = qsTr("原厂息屏接口不可用")
+                return
+            }
+            if (typeof devManager !== "undefined" && devManager.setLightIndex) {
+                if (seconds === 30) devManager.setLightIndex(1)
+                else if (seconds === 60) devManager.setLightIndex(2)
+                else if (seconds === 180) devManager.setLightIndex(3)
+            }
+            root.displayStatus = qsTr("已设置为 ") + label
+        } catch (e) {
+            root.displayStatus = qsTr("设置失败：") + e
+        }
     }
 
     function showTip(message) {
@@ -954,41 +1214,36 @@ BasicButton { text: qsTr("确定"); anchors.right: parent.right; anchors.rightMa
     }
     Timer { id: tipTimer; interval: 1800; onTriggered: tip.visible = false }
 
-    InputPanel {
-        id: virtualKeyboard
-        parent: Window.window ? Window.window.contentItem : root
-        z: 100
-        width: Math.round(root.width * 0.48)
-        height: Math.round(virtualKeyboard.width / 3.2)
-        anchors.horizontalCenter: parent.horizontalCenter
-        anchors.bottom: parent.bottom
-        visible: Qt.inputMethod.visible
+    Item {
+        id: openZybTeamWatermarkLayer
+        z: 5
+        anchors.fill: parent
 
-        function reportDiag(tag) {
-            try {
-                var kr = Qt.inputMethod.keyboardRectangle
-                var p = virtualKeyboard.mapToItem(root, 0, 0)
-                var pb = virtualKeyboard.mapToItem(root, 0, virtualKeyboard.height)
-                var xhr = new XMLHttpRequest()
-                xhr.open("POST", "http://127.0.0.1:8080/api/diag")
-                xhr.setRequestHeader("Content-Type", "application/json")
-                xhr.send(JSON.stringify({
-                    tag: tag,
-                    rootW: root.width, rootH: root.height,
-                    winW: Window.window ? Window.window.width : -1,
-                    winH: Window.window ? Window.window.height : -1,
-                    panelW: virtualKeyboard.width, panelH: virtualKeyboard.height,
-                    mapX: Math.round(p.x), mapY: Math.round(p.y),
-                    mapBottom: Math.round(pb.y),
-                    active: virtualKeyboard.active,
-                    imVisible: Qt.inputMethod.visible,
-                    imKbW: kr ? kr.width : -1, imKbH: kr ? kr.height : -1
-                }))
-            } catch (e) {}
+        Grid {
+            anchors.fill: parent
+            columns: 3
+            rows: 3
+
+            Repeater {
+                model: 9
+
+                Text {
+                    width: openZybTeamWatermarkLayer.width / 3
+                    height: openZybTeamWatermarkLayer.height / 3
+                    text: "OpenZybTeam"
+                    color: "#FFFFFF"
+                    opacity: 0.10
+                    font.pixelSize: 24
+                    font.styleName: "Bold"
+                    font.letterSpacing: 2
+                    rotation: -18
+                    horizontalAlignment: Text.AlignHCenter
+                    verticalAlignment: Text.AlignVCenter
+                    wrapMode: Text.NoWrap
+                }
+            }
         }
-
-        onActiveChanged: reportDiag("active=" + active)
-        onHeightChanged: reportDiag("height")
-        onYChanged: reportDiag("y")
     }
+
+    Component.onCompleted: root.loadSshStatus()
 }

@@ -1,12 +1,14 @@
-Z03Plus 源码包
-================
+Z03Ultra 源码包
+===================
+
+Z03Ultra 是基于 Z03Plus 扩展项目发展而来的分支，保留其 overlay 注入与 QRC 覆盖方案。
 
 用途
 ----
 本项目为紫光展锐 Linux/Qt 词典笔 Z03 的扩展功能原型。
 当前已通过外部 Qt RCC 资源覆盖，在原厂“设置”页面中添加：
 
-    设置 -> Z03Plus 扩展
+    设置 -> Z03Ultra 扩展
 
 设备环境
 --------
@@ -15,18 +17,28 @@ Z03Plus 源码包
 - 系统：Linux 4.14，glibc 2.27
 - Qt：Qt 5.10.1 / Qt Quick / Wayland
 - 外部可写目录：/home/user/z03plus/
+- 动态库与启动器沿用 libZ03Plus.so、Z03Plus 命名，以兼容既有安装。
 
 已实现
 ------
 1. ARMv7 动态库注入：将 DT_NEEDED 添加到 Z03 的副本，不覆盖原始 /usr/bin/Z03。
-2. Hook qRegisterResourceData()，在原厂 QRC 注册前加载 Z03Plus overlay。
+2. Hook qRegisterResourceData()，在原厂 QRC 注册前加载 Z03Ultra overlay。
 3. 从运行中的 Z03 导出完整 Qt 资源，设备端导出目录：
        /home/user/z03plus/qrc/
 4. 使用兼容的外部 QRC 覆盖：
        qrc:/ZybQmlFiles/ZybSet/SetMainPage.qml
-5. 设置页新增“Z03Plus 扩展”入口。
-6. Z03Plus 首页当前包含文件管理、文本阅读、存储空间、显示与灯光、ADB/SSH、播放器、录音/息屏等入口。
-   “显示与灯光”会打开原厂 SetLightPage.qml；其他项目目前为稳定的功能占位入口。
+5. 设置页新增“Z03Ultra 扩展”入口。
+6. Z03Ultra 首页当前包含文件管理、文本阅读、存储空间、音乐播放、录音、终端 Shell、
+   应用商店（Nix）、网页浏览、关于设备、显示与灯光、ADB/SSH、AI 对话与息屏等入口。
+   - 存储空间：显示各分区用量与文件系统，支持清理缓存。
+   - 音乐播放：扫描 /mnt/data 与 /home/user 下的音频并通过 MediaPlayer 播放。
+   - 录音：按 arecord/tinycap/gst-launch-1.0 选择后端，输出 16 kHz 单声道 WAV。
+   - 终端 Shell：/bin/sh -c 执行命令，实时回显输出。
+   - 应用商店：使用 Nix（单用户安装，TUNA 镜像下载 2.9.2 + nixos-22.05 频道），
+     支持搜索、安装、已安装列表与频道更新。
+   - 网页浏览：纯文本浏览器，支持地址栏、搜索、后退与链接跳转。
+   - 关于设备：显示型号、内核、架构、CPU、内存、运行时间与根分区信息。
+   - “显示与灯光”会打开原厂 SetLightPage.qml。
 
 重要：RCC 格式
 --------------
@@ -42,7 +54,7 @@ Z03Plus 源码包
 - z03plus_overlay/
   实际生效的 overlay：
   - SetMainPage.qml：原厂设置主页的覆盖版，添加入口。
-  - Z03PlusPage.qml：扩展主页。
+  - Z03UltraPage.qml：扩展主页。
   - z03plus.qrc：两个 QML 的外部资源清单。
   - z03plus_overlay.cpp：注入库，抢先注册外部 QRC。
 

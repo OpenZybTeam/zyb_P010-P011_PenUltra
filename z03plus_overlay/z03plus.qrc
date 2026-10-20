@@ -1,9 +1,18 @@
 <RCC>
+  <qresource prefix="/">
+    <file alias="main.qml">main.qml</file>
+  </qresource>
   <qresource prefix="/ZybQmlFiles/ZybSet">
     <file alias="SetMainPage.qml">SetMainPage.qml</file>
-    <file alias="Z03PlusPage.qml">Z03PlusPage.qml</file>
+    <file alias="Z03UltraPage.qml">Z03UltraPage.qml</file>
     <file alias="ScreenTimeoutPage.qml">ScreenTimeoutPage.qml</file>
-    <file alias="SshPage.qml">SshPage.qml</file>
-    <!-- File manager and text reader are embedded in Z03PlusPage.qml. -->
+    <file alias="StoragePage.qml">StoragePage.qml</file>
+    <file alias="MusicPage.qml">MusicPage.qml</file>
+    <file alias="RecorderPage.qml">RecorderPage.qml</file>
+    <file alias="ShellPage.qml">ShellPage.qml</file>
+    <file alias="NixStorePage.qml">NixStorePage.qml</file>
+    <file alias="DeviceInfoPage.qml">DeviceInfoPage.qml</file>
+    <file alias="BrowserPage.qml">BrowserPage.qml</file>
+    <!-- File manager and text reader are embedded in Z03UltraPage.qml. -->
   </qresource>
 </RCC>

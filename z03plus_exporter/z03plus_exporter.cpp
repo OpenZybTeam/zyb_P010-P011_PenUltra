@@ -6,7 +6,7 @@
 #include <QFileInfo>
 #include <QString>
 
-extern "C" void *dlsym(void *handle, const char *symbol);
+extern "C" void *dlsym(void *handle, const char *symbol) noexcept;
 #define RTLD_NEXT ((void *)-1l)
 
 typedef unsigned char uchar;

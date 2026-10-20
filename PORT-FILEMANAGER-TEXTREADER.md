@@ -16,7 +16,7 @@ Z03Plus 的 ARMv7 / Qt 5.10 环境重新实现，未直接复制 PenMods 二进�
   - 注册 `TextFileService`：读取 TXT、MD、LRC；
   - 访问范围限制为 `/mnt/data`、`/home/user` 及其子目录；
   - 单文件最大读取量为 2 MiB，避免大文件耗尽 Qt Quick 内存。
-- `z03plus_overlay/Z03PlusPage.qml`：两个原本的占位入口均跳转至文件管理器。
+- `z03plus_overlay/Z03UltraPage.qml`：两个原本的占位入口均跳转至文件管理器。
 - `z03plus_overlay/z03plus.qrc`：加入两个新 QML 文件。
 
 ## 构建要点

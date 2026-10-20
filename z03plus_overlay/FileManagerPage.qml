@@ -1,5 +1,5 @@
 import QtQuick 2.0
-import Z03Plus 1.0
+import Z03Ultra 1.0
 
 /* Deliberately self-contained: no relative imports of vendor QML modules. */
 Rectangle {

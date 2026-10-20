@@ -28,13 +28,14 @@ AuthorizedKeysFile /home/$USER_NAME/.ssh/authorized_keys
 PubkeyAuthentication yes
 PasswordAuthentication yes
 ChallengeResponseAuthentication yes
-PermitEmptyPasswords yes
+PermitEmptyPasswords no
 UsePAM no
 PermitRootLogin yes
+StrictModes no
 AllowUsers $USER_NAME root
 X11Forwarding no
 AllowTcpForwarding no
-Subsystem sftp /usr/libexec/sftp-server
+Subsystem sftp /usr/lib/openssh/sftp-server
 EOF
 chmod 600 "$CONF"
 cat > "$START" <<'EOF'
@@ -47,8 +48,10 @@ if [ -s "$PIDFILE" ] && kill -0 "$(cat "$PIDFILE")" 2>/dev/null; then exit 0; fi
 rm -f "$PIDFILE"
 mkdir -p /var/run/sshd
 chmod 755 /var/run/sshd
-/usr/sbin/sshd -t -f "$CONF"
-exec /usr/sbin/sshd -f "$CONF"
+SSHD=/usr/sbin/sshd
+[ -x "$SSHD" ] || SSHD=$(command -v sshd)
+"$SSHD" -t -f "$CONF"
+exec "$SSHD" -f "$CONF"
 EOF
 chmod 700 "$START"
 "$START"

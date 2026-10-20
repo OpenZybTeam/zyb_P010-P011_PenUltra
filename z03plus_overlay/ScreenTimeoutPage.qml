@@ -28,7 +28,10 @@ Rectangle {
                 var eventId = seconds === 30 ? PingDefine.PING_EVENT_SET_SCREEN_TIME_30
                              : seconds === 60 ? PingDefine.PING_EVENT_SET_SCREEN_TIME_60
                              : PingDefine.PING_EVENT_SET_SCREEN_TIME_180
-                pingManager.addPingData(eventId)
+                if (typeof pingManager !== "undefined" && pingManager.addPingData)
+                    pingManager.addPingData(eventId)
+                if (typeof devManager !== "undefined" && devManager.setLightIndex)
+                    devManager.setLightIndex(seconds === 30 ? 1 : seconds === 60 ? 2 : 3)
             }
             if (!customSent) {
                 root.statusText = qsTr("原厂息屏接口不可用")
@@ -166,5 +169,19 @@ Rectangle {
         id: statusTimer
         interval: 2200
         onTriggered: root.statusText = ""
+    }
+    Component.onCompleted: {
+        try {
+            if (typeof devManager !== "undefined" && devManager.getLightIndex) {
+                var index = devManager.getLightIndex()
+                root.currentText = index === 2 ? qsTr("1 分钟")
+                    : index === 3 ? qsTr("3 分钟")
+                    : qsTr("30 秒")
+            } else {
+                root.currentText = qsTr("原厂设置")
+            }
+        } catch (e) {
+            root.currentText = qsTr("原厂设置")
+        }
     }
 }

@@ -32,7 +32,7 @@ Item {
         ListElement { name: qsTr("使用帮助"); icon: "qrc:/images/icon_help.png"; circle: false; source: "qrc:/ZybQmlFiles/ZybSet/SetHelpPage.qml" }
         ListElement { name: qsTr("用户反馈"); icon: "qrc:/images/icon_user_report.png"; circle: false; source: "qrc:/ZybQmlFiles/ZybSet/SetUserReport.qml" }
         ListElement { name: qsTr("关于设备"); icon: "qrc:/images/info42x42.png"; circle: false; source: "qrc:/ZybQmlFiles/ZybSet/SetDevInfo.qml" }
-        ListElement { name: qsTr("Z03Plus 扩展"); icon: "qrc:/images/info42x42.png"; circle: false; source: "qrc:/ZybQmlFiles/ZybSet/Z03PlusPage.qml" }
+        ListElement { name: qsTr("Z03Ultra 扩展"); icon: "qrc:/images/info42x42.png"; circle: false; source: "qrc:/ZybQmlFiles/ZybSet/Z03UltraPage.qml" }
     }
 
     StackView {

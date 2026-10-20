@@ -1,11 +1,13 @@
-# Z03Plus
+# Z03Ultra
+
+Z03Ultra 是基于 Z03Plus 扩展项目发展而来的分支，保留其 overlay 注入与 QRC 覆盖方案。
 
 紫光展锐 Linux/Qt 词典笔 Z03（P010/P011 兼容环境）的扩展功能原型。
 
 本项目通过外部 Qt RCC 资源覆盖，在原厂“设置”页面加入：
 
 ```text
-设置 -> Z03Plus 扩展
+设置 -> Z03Ultra 扩展
 ```
 
 ## 重要提示
@@ -14,15 +16,24 @@
 - 操作前请完整备份设备数据和启动配置。使用者须自行承担刷写、部署及启动失败的风险。
 - 不要直接修改或覆盖原厂 `/usr/bin/Z03`；始终使用 `/home/user/z03plus/Z03Plus` 中的副本。
 - 本仓库只提供源码，不包含原厂二进制、Qt 库、工具链、设备导出资源或编译产物。
+- 为兼容既有设备安装，动态库、启动器与部署目录沿用 `libZ03Plus.so`、`Z03Plus`、`/home/user/z03plus/` 命名；源码项目与界面统一使用 Z03Ultra 名称。
 
 ## 已实现
 
 1. ARMv7 动态库注入：将 `DT_NEEDED` 添加到 Z03 的副本，不覆盖原始 `/usr/bin/Z03`。
-2. Hook `qRegisterResourceData()`，在原厂 QRC 注册前加载 Z03Plus overlay。
+2. Hook `qRegisterResourceData()`，在原厂 QRC 注册前加载 Z03Ultra overlay。
 3. 从运行中的 Z03 导出完整 Qt 资源，设备端导出目录为 `/home/user/z03plus/qrc/`。
 4. 使用兼容的外部 QRC 覆盖：`qrc:/ZybQmlFiles/ZybSet/SetMainPage.qml`。
-5. 设置页新增“Z03Plus 扩展”入口。
-6. Z03Plus 首页包含文件管理、文本阅读、存储空间、显示与灯光、ADB/SSH、播放器、录音/息屏等入口。“显示与灯光”会打开原厂 `SetLightPage.qml`；其余项目目前为稳定的功能占位入口。
+5. 设置页新增“Z03Ultra 扩展”入口。
+6. Z03Ultra 首页包含文件管理、文本阅读、存储空间、音乐播放、录音、终端 Shell、应用商店（Nix）、网页浏览、关于设备、显示与灯光、ADB/SSH、AI 对话与息屏入口。
+   - 存储空间：读取各挂载分区用量，显示文件系统与只读状态，并提供缓存清理。
+   - 音乐播放：递归扫描 `/mnt/data` 与 `/home/user`，通过 `MediaPlayer` 播放并支持进度拖动。
+   - 录音：按 `arecord` / `tinycap` / `gst-launch-1.0` 顺序选择后端，保存 16 kHz 单声道 WAV 到 `/home/user/z03plus/recordings`。
+   - 终端 Shell：`/bin/sh -c` 执行命令，输出实时回显，支持停止与 60 秒超时。
+   - 应用商店：使用 Nix（单用户安装，通过清华 TUNA 镜像下载 Nix 2.9.2 armv7l 并添加 nixos-22.05 频道），支持搜索、按属性安装、查看已安装与更新频道。
+   - 网页浏览：基于 QtNetwork 的纯文本浏览器，支持地址栏、搜索、历史后退、链接跳转与常用站点快捷入口；页面限 1 MB、正文截断到 160 KB。
+   - 关于设备：展示设备型号、发行版、内核、ARM 架构、CPU 型号与特性、内存、运行时间、根分区与 Qt 版本。
+   - “显示与灯光”会打开原厂 `SetLightPage.qml`。
 
 ## 设备环境
 
@@ -36,7 +47,7 @@
 
 - `z03plus_overlay/`：实际生效的 overlay。
   - `SetMainPage.qml`：原厂设置主页的覆盖版，添加入口。
-  - `Z03PlusPage.qml`：扩展主页。
+  - `Z03UltraPage.qml`：扩展主页。
   - `z03plus.qrc`：QML 的外部资源清单。
   - `z03plus_overlay.cpp`：注入库，抢先注册外部 QRC。
 - `z03plus_exporter/`：资源导出器源码。在 Z03 注册原始 QRC 后遍历 `:/` 并导出运行时资源。
@@ -46,6 +57,14 @@
 ## 构建与部署
 
 需要 ARMv7 Linux 交叉编译器、QtCore 开发头文件，以及与设备兼容的 `libstdc++` ABI。
+
+推荐直接运行构建脚本；手工步骤列在下方作为参考。
+
+```sh
+./build_armhf.sh /path/to/original/Z03
+```
+
+脚本会编译 `libZ03Plus.so`、`libZ03PlusExporter.so`，生成 RCC v2，并检查 GLIBC 与架构。
 
 1. 编译 `libZ03Plus.so`（ARMv7 shared object）。
 2. 生成 RCC v2：
@@ -68,7 +87,9 @@
    /home/user/z03plus/z03plus.rcc
    ```
 
-5. 配置启动脚本，使其启动 `Z03Plus` 副本。
+5. 确认启动入口运行 `Z03Plus` 副本。
+
+完整的依赖安装、moc 版本、部署、验证与回退步骤见 [docs/BUILD_DEPLOY_zh.md](docs/BUILD_DEPLOY_zh.md)。
 
 ### RCC 格式
 

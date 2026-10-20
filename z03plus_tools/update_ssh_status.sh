@@ -12,6 +12,9 @@ IP=$(busybox ifconfig wlan0 2>/dev/null | awk '/inet addr:/ { sub(/^.*inet addr:
 [ -n "$IP" ] || IP="未连接 Wi-Fi"
 if [ -s "$BASE/sshd.pid" ] && kill -0 "$(cat "$BASE/sshd.pid")" 2>/dev/null; then RUNNING=on; else RUNNING=off; fi
 if [ -s /home/user/.ssh/authorized_keys ]; then KEY_STATUS="已配置"; else KEY_STATUS="未配置"; fi
+if [ ! -f "$CONF" ]; then ROOT_STATUS="未配置"
+elif grep -qs '^[[:space:]]*PermitRootLogin[[:space:]]*no' "$CONF"; then ROOT_STATUS="已禁用"
+else ROOT_STATUS="已允许"; fi
 
 umask 077
 mkdir -p "$STATE_DIR"
@@ -21,6 +24,7 @@ ip=$IP
 port=$PORT
 user=user
 key_status=$KEY_STATUS
+root_login=$ROOT_STATUS
 command=ssh user@$IP -p $PORT
 EOF
 chmod 600 "$STATUS_FILE"
