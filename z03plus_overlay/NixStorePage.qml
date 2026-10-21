@@ -84,7 +84,7 @@ Rectangle {
         radius: 8
         color: root.cardColor
         ZybText {
-            text: qsTr("Nix 未安装。安装会从清华 TUNA 镜像下载 Nix 2.9.2（armv7l），并添加 nixos-22.05 频道；需要可写的 /nix 目录，过程约数分钟。")
+            text: qsTr("Nix 未安装。安装会从清华 TUNA 镜像下载 Nix 2.9.2（armv7l），并添加 nixos-22.05 频道；安装目录优先放到 /home/nix，再软链接为 /nix；过程约数分钟。")
             width: parent.width - 150
             wrapMode: Text.WordWrap
             font.pixelSize: 12

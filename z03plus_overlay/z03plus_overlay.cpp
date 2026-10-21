@@ -29,6 +29,7 @@
 #include <QMetaMethod>
 #include <QStringList>
 #include <QResource>
+#include <QSaveFile>
 #include <QSettings>
 #include <QUrl>
 #include <QTextCodec>
@@ -196,45 +197,50 @@ private:
 
 // File browsing is intentionally constrained to user-writable data locations.
 // QML receives paths only from this service; traversal outside these roots is refused.
+// Full filesystem access: Z03Ultra runs with the privileges of the host app,
+// so the file manager browses from "/" and performs common operations. Every
+// path is normalized and every failure is returned to QML with a reason.
 class Z03PlusFileService : public QObject
 {
     Q_OBJECT
 public:
     Q_INVOKABLE QVariantMap openDirectory(const QString &requested, int order, bool reversed) const
     {
-        const QString path = requested.isEmpty() ? QStringLiteral("/mnt/data") : requested;
-        QVariantMap result;
-        if (!allowed(path)) {
-            result.insert(QStringLiteral("ok"), false);
-            result.insert(QStringLiteral("error"), QStringLiteral("不允许访问该目录"));
-            return result;
-        }
+        const QString path = normalize(requested.isEmpty() ? QStringLiteral("/") : requested);
+        if (path.isEmpty())
+            return failure(QStringLiteral("路径无效"));
+        QFileInfo info(path);
+        if (!info.exists())
+            return failure(QStringLiteral("目录不存在"));
+        if (!info.isDir())
+            return failure(QStringLiteral("不是目录"));
         QDir dir(path);
-        if (!dir.exists()) {
-            result.insert(QStringLiteral("ok"), false);
-            result.insert(QStringLiteral("error"), QStringLiteral("目录不存在或无法读取"));
-            return result;
-        }
+        if (!dir.isReadable())
+            return failure(QStringLiteral("目录不可读，请检查权限"));
+
         QVariantList entries;
         QDir::SortFlags sort = QDir::DirsFirst | QDir::IgnoreCase;
         if (order == 1) sort |= QDir::Time;
         else if (order == 2) sort |= QDir::Size;
         else sort |= QDir::Name;
         if (reversed) sort |= QDir::Reversed;
-        const QFileInfoList list = dir.entryInfoList(QDir::Dirs | QDir::Files | QDir::NoDotAndDotDot | QDir::NoSymLinks, sort);
-        for (const QFileInfo &info : list) {
+        const QFileInfoList list = dir.entryInfoList(QDir::AllEntries | QDir::NoDotAndDotDot |
+                                                     QDir::Hidden | QDir::System, sort);
+        for (const QFileInfo &entryInfo : list) {
             QVariantMap entry;
-            const QString suffix = info.suffix().toLower();
-            entry.insert(QStringLiteral("name"), info.fileName());
-            entry.insert(QStringLiteral("path"), info.absoluteFilePath());
-            entry.insert(QStringLiteral("isDir"), info.isDir());
-            entry.insert(QStringLiteral("text"), !info.isDir() &&
-                         (suffix == QStringLiteral("txt") || suffix == QStringLiteral("md") || suffix == QStringLiteral("lrc") || suffix == QStringLiteral("log")));
-            entry.insert(QStringLiteral("size"), sizeString(info.size()));
-            entry.insert(QStringLiteral("modified"), info.lastModified().toString(QStringLiteral("yyyy-MM-dd hh:mm")));
+            entry.insert(QStringLiteral("name"), entryInfo.fileName());
+            entry.insert(QStringLiteral("path"), entryInfo.absoluteFilePath());
+            entry.insert(QStringLiteral("isDir"), entryInfo.isDir());
+            entry.insert(QStringLiteral("isLink"), entryInfo.isSymLink());
+            entry.insert(QStringLiteral("text"), !entryInfo.isDir() && isTextName(entryInfo.fileName()));
+            entry.insert(QStringLiteral("archive"), !entryInfo.isDir() && isArchiveName(entryInfo.fileName()));
+            entry.insert(QStringLiteral("readable"), entryInfo.isReadable());
+            entry.insert(QStringLiteral("writable"), entryInfo.isWritable());
+            entry.insert(QStringLiteral("size"), suffixSize(entryInfo));
+            entry.insert(QStringLiteral("modified"), entryInfo.lastModified().toString(QStringLiteral("yyyy-MM-dd hh:mm")));
             entries.append(entry);
         }
-        result.insert(QStringLiteral("ok"), true);
+        QVariantMap result = success(dir.absolutePath());
         result.insert(QStringLiteral("path"), dir.absolutePath());
         result.insert(QStringLiteral("entries"), entries);
         return result;
@@ -242,31 +248,400 @@ public:
 
     Q_INVOKABLE bool rename(const QString &path, const QString &newName) const
     {
-        if (!allowed(path) || newName.isEmpty() || newName.contains(QLatin1Char('/')) || newName == QStringLiteral(".") || newName == QStringLiteral("..")) return false;
-        QFileInfo info(path);
+        const QString source = normalize(path);
+        if (source.isEmpty() || source == QStringLiteral("/") || !validName(newName))
+            return false;
+        QFileInfo info(source);
+        if (!info.exists())
+            return false;
         return QDir(info.absolutePath()).rename(info.fileName(), newName);
     }
+
     Q_INVOKABLE bool remove(const QString &path) const
     {
-        if (!allowed(path)) return false;
-        QFileInfo info(path);
-        if (info.isDir()) return QDir(path).removeRecursively();
-        return QFile::remove(path);
+        const QString target = normalize(path);
+        if (target.isEmpty() || target == QStringLiteral("/"))
+            return false;
+        QFileInfo info(target);
+        if (!info.exists())
+            return false;
+        if (info.isDir() && !info.isSymLink())
+            return QDir(target).removeRecursively();
+        return QFile::remove(target);
     }
-    Q_INVOKABLE QString parentPath(const QString &path) const { QDir dir(path); return dir.absoluteFilePath(QStringLiteral("..")); }
-    Q_INVOKABLE bool canGoUp(const QString &path) const { return !path.isEmpty() && QDir::cleanPath(path) != QStringLiteral("/mnt/data") && QDir::cleanPath(path) != QStringLiteral("/home/user"); }
 
-    static bool allowed(const QString &path)
+    Q_INVOKABLE QVariantMap createDirectory(const QString &parentDir, const QString &name) const
     {
-        const QString clean = QDir::cleanPath(QFileInfo(path).absoluteFilePath());
-        return clean == QStringLiteral("/mnt/data") || clean.startsWith(QStringLiteral("/mnt/data/")) ||
-               clean == QStringLiteral("/home/user") || clean.startsWith(QStringLiteral("/home/user/"));
+        const QString dirPath = normalize(parentDir);
+        if (dirPath.isEmpty() || !validName(name))
+            return failure(QStringLiteral("名称无效"));
+        QDir parent(dirPath);
+        if (!parent.exists())
+            return failure(QStringLiteral("目录不存在"));
+        if (QFileInfo::exists(dirPath + QLatin1Char('/') + name))
+            return failure(QStringLiteral("同名文件或目录已存在"));
+        if (!parent.mkdir(name))
+            return failure(QStringLiteral("新建失败，请检查权限"));
+        return success(dirPath + QLatin1Char('/') + name);
     }
+
+    Q_INVOKABLE QVariantMap copyInto(const QString &source, const QString &targetDir) const
+    {
+        const QString src = normalize(source);
+        const QString dirPath = normalize(targetDir);
+        if (src.isEmpty() || dirPath.isEmpty())
+            return failure(QStringLiteral("路径无效"));
+        QFileInfo srcInfo(src);
+        if (!srcInfo.exists())
+            return failure(QStringLiteral("源文件不存在"));
+        QFileInfo dirInfo(dirPath);
+        if (!dirInfo.isDir())
+            return failure(QStringLiteral("目标不是目录"));
+        const QString dst = uniquePath(dirPath, srcInfo.fileName());
+        if (dst == src)
+            return failure(QStringLiteral("源与目标相同"));
+        if (srcInfo.isDir() && dst.startsWith(src + QLatin1Char('/')))
+            return failure(QStringLiteral("不能复制到自身内部"));
+        if (!copyRecursive(src, dst)) {
+            removePath(dst);
+            return failure(QStringLiteral("复制失败，请检查权限或存储空间"));
+        }
+        return success(dst);
+    }
+
+    Q_INVOKABLE QVariantMap moveInto(const QString &source, const QString &targetDir) const
+    {
+        const QString src = normalize(source);
+        const QString dirPath = normalize(targetDir);
+        if (src.isEmpty() || dirPath.isEmpty() || src == QStringLiteral("/"))
+            return failure(QStringLiteral("路径无效"));
+        QFileInfo srcInfo(src);
+        if (!srcInfo.exists())
+            return failure(QStringLiteral("源文件不存在"));
+        QFileInfo dirInfo(dirPath);
+        if (!dirInfo.isDir())
+            return failure(QStringLiteral("目标不是目录"));
+        const QString dst = uniquePath(dirPath, srcInfo.fileName());
+        if (dst == src)
+            return failure(QStringLiteral("源与目标相同"));
+        if (srcInfo.isDir() && dst.startsWith(src + QLatin1Char('/')))
+            return failure(QStringLiteral("不能移动到自身内部"));
+        if (QDir().rename(src, dst))
+            return success(dst);
+        if (!copyRecursive(src, dst)) {
+            removePath(dst);
+            return failure(QStringLiteral("移动失败，请检查权限或存储空间"));
+        }
+        bool removed = false;
+        if (srcInfo.isDir() && !srcInfo.isSymLink()) removed = QDir(src).removeRecursively();
+        else removed = QFile::remove(src);
+        if (!removed)
+            return failure(QStringLiteral("已复制到目标，但无法删除源文件"));
+        return success(dst);
+    }
+
+    Q_INVOKABLE QVariantMap compress(const QStringList &paths, const QString &archivePath) const
+    {
+        const QString archive = normalize(archivePath);
+        if (archive.isEmpty() || paths.isEmpty())
+            return failure(QStringLiteral("参数无效"));
+        if (QFileInfo::exists(archive))
+            return failure(QStringLiteral("同名压缩包已存在"));
+        QString parentDir;
+        QStringList names;
+        for (const QString &raw : paths) {
+            const QString path = normalize(raw);
+            QFileInfo info(path);
+            if (path.isEmpty() || !info.exists())
+                return failure(QStringLiteral("源文件不存在：") + raw);
+            if (parentDir.isEmpty()) parentDir = info.absolutePath();
+            else if (parentDir != info.absolutePath())
+                return failure(QStringLiteral("只能压缩同一目录下的项目"));
+            names.append(info.fileName());
+        }
+        const QString lower = archive.toLower();
+        QVariantMap result;
+        if (lower.endsWith(QStringLiteral(".zip"))) {
+            QStringList args;
+            args << QStringLiteral("-r") << QStringLiteral("-q") << archive << names;
+            result = runTool(QStringLiteral("zip"), args, parentDir, 10 * 60 * 1000);
+        } else if (lower.endsWith(QStringLiteral(".tar.gz")) || lower.endsWith(QStringLiteral(".tgz"))) {
+            QStringList args;
+            args << QStringLiteral("-czf") << archive << QStringLiteral("-C") << parentDir << names;
+            result = runTool(QStringLiteral("tar"), args, parentDir, 10 * 60 * 1000);
+        } else if (lower.endsWith(QStringLiteral(".tar.xz")) || lower.endsWith(QStringLiteral(".txz"))) {
+            QStringList args;
+            args << QStringLiteral("-cJf") << archive << QStringLiteral("-C") << parentDir << names;
+            result = runTool(QStringLiteral("tar"), args, parentDir, 10 * 60 * 1000);
+        } else if (lower.endsWith(QStringLiteral(".tar"))) {
+            QStringList args;
+            args << QStringLiteral("-cf") << archive << QStringLiteral("-C") << parentDir << names;
+            result = runTool(QStringLiteral("tar"), args, parentDir, 10 * 60 * 1000);
+        } else {
+            return failure(QStringLiteral("仅支持 .tar、.tar.gz、.tgz、.tar.xz、.zip"));
+        }
+        if (result.value(QStringLiteral("ok")).toBool())
+            result.insert(QStringLiteral("path"), archive);
+        return result;
+    }
+
+    Q_INVOKABLE QVariantMap extract(const QString &archivePath, const QString &targetDir) const
+    {
+        const QString archive = normalize(archivePath);
+        const QString target = normalize(targetDir.isEmpty() ? QStringLiteral("/") : targetDir);
+        QFileInfo info(archive);
+        if (archive.isEmpty() || !info.exists() || !info.isFile())
+            return failure(QStringLiteral("压缩包不存在"));
+        if (target.isEmpty())
+            return failure(QStringLiteral("目标目录无效"));
+        if (!QDir().mkpath(target))
+            return failure(QStringLiteral("无法创建目标目录"));
+        const QString lower = archive.toLower();
+        QVariantMap result;
+        if (lower.endsWith(QStringLiteral(".zip"))) {
+            QStringList args;
+            args << QStringLiteral("-o") << archive << QStringLiteral("-d") << target;
+            result = runTool(QStringLiteral("unzip"), args, target, 10 * 60 * 1000);
+        } else if (lower.endsWith(QStringLiteral(".tar.gz")) || lower.endsWith(QStringLiteral(".tgz"))) {
+            QStringList args;
+            args << QStringLiteral("-xzf") << archive << QStringLiteral("-C") << target;
+            result = runTool(QStringLiteral("tar"), args, target, 10 * 60 * 1000);
+        } else if (lower.endsWith(QStringLiteral(".tar.bz2")) || lower.endsWith(QStringLiteral(".tbz2"))) {
+            QStringList args;
+            args << QStringLiteral("-xjf") << archive << QStringLiteral("-C") << target;
+            result = runTool(QStringLiteral("tar"), args, target, 10 * 60 * 1000);
+        } else if (lower.endsWith(QStringLiteral(".tar.xz")) || lower.endsWith(QStringLiteral(".txz"))) {
+            QStringList args;
+            args << QStringLiteral("-xJf") << archive << QStringLiteral("-C") << target;
+            result = runTool(QStringLiteral("tar"), args, target, 10 * 60 * 1000);
+            if (!result.value(QStringLiteral("ok")).toBool()) {
+                const QString command = QStringLiteral("xz -dc ") + shellQuote(archive) +
+                                        QStringLiteral(" | tar -xf - -C ") + shellQuote(target);
+                result = runShell(command, target, 10 * 60 * 1000);
+            }
+        } else if (lower.endsWith(QStringLiteral(".tar"))) {
+            QStringList args;
+            args << QStringLiteral("-xf") << archive << QStringLiteral("-C") << target;
+            result = runTool(QStringLiteral("tar"), args, target, 10 * 60 * 1000);
+        } else {
+            return failure(QStringLiteral("不支持的压缩格式"));
+        }
+        return result;
+    }
+
+    Q_INVOKABLE QString parentPath(const QString &path) const
+    {
+        const QString clean = normalize(path);
+        if (clean.isEmpty() || clean == QStringLiteral("/"))
+            return QStringLiteral("/");
+        int slash = clean.lastIndexOf(QLatin1Char('/'));
+        return slash <= 0 ? QStringLiteral("/") : clean.left(slash);
+    }
+
+    Q_INVOKABLE bool canGoUp(const QString &path) const
+    {
+        const QString clean = normalize(path);
+        return !clean.isEmpty() && clean != QStringLiteral("/");
+    }
+
+    static QString normalize(const QString &path)
+    {
+        const QString trimmed = path.trimmed();
+        if (trimmed.isEmpty())
+            return QString();
+        const QString absolute = QFileInfo(trimmed).isAbsolute()
+                ? trimmed : QDir::current().absoluteFilePath(trimmed);
+        return QDir::cleanPath(absolute);
+    }
+
+    static bool isArchiveName(const QString &name)
+    {
+        const QString lower = name.toLower();
+        return lower.endsWith(QStringLiteral(".zip")) || lower.endsWith(QStringLiteral(".tar")) ||
+               lower.endsWith(QStringLiteral(".tar.gz")) || lower.endsWith(QStringLiteral(".tgz")) ||
+               lower.endsWith(QStringLiteral(".tar.xz")) || lower.endsWith(QStringLiteral(".txz")) ||
+               lower.endsWith(QStringLiteral(".tar.bz2")) || lower.endsWith(QStringLiteral(".tbz2"));
+    }
+
+    static bool isTextName(const QString &name)
+    {
+        const QString suffix = QFileInfo(name).suffix().toLower();
+        if (suffix.isEmpty())
+            return true;
+        static const QStringList suffixes = {
+            QStringLiteral("txt"), QStringLiteral("md"), QStringLiteral("lrc"), QStringLiteral("log"),
+            QStringLiteral("json"), QStringLiteral("xml"), QStringLiteral("ini"), QStringLiteral("conf"),
+            QStringLiteral("cfg"), QStringLiteral("sh"), QStringLiteral("c"), QStringLiteral("h"),
+            QStringLiteral("cpp"), QStringLiteral("hpp"), QStringLiteral("qml"), QStringLiteral("js"),
+            QStringLiteral("css"), QStringLiteral("html"), QStringLiteral("htm"), QStringLiteral("csv"),
+            QStringLiteral("yaml"), QStringLiteral("yml"), QStringLiteral("toml"), QStringLiteral("py"),
+            QStringLiteral("lua"), QStringLiteral("srt"), QStringLiteral("ass"), QStringLiteral("prop"),
+            QStringLiteral("diff"), QStringLiteral("patch"), QStringLiteral("pro"), QStringLiteral("pri")};
+        return suffixes.contains(suffix);
+    }
+
     static QString sizeString(qint64 bytes)
     {
         if (bytes < 1024) return QString::number(bytes) + QStringLiteral(" B");
         if (bytes < 1024 * 1024) return QString::number(bytes / 1024.0, 'f', 1) + QStringLiteral(" KB");
-        return QString::number(bytes / (1024.0 * 1024.0), 'f', 1) + QStringLiteral(" MB");
+        if (bytes < 1024LL * 1024 * 1024) return QString::number(bytes / (1024.0 * 1024.0), 'f', 1) + QStringLiteral(" MB");
+        return QString::number(bytes / (1024.0 * 1024.0 * 1024.0), 'f', 2) + QStringLiteral(" GB");
+    }
+
+private:
+    static QVariantMap failure(const QString &message)
+    {
+        QVariantMap result;
+        result.insert(QStringLiteral("ok"), false);
+        result.insert(QStringLiteral("error"), message);
+        return result;
+    }
+    static QVariantMap success(const QString &path)
+    {
+        QVariantMap result;
+        result.insert(QStringLiteral("ok"), true);
+        result.insert(QStringLiteral("path"), path);
+        return result;
+    }
+    static bool validName(const QString &name)
+    {
+        return !name.isEmpty() && !name.contains(QLatin1Char('/')) &&
+               name != QStringLiteral(".") && name != QStringLiteral("..");
+    }
+    static QString suffixSize(const QFileInfo &info)
+    {
+        if (info.isDir()) return QString();
+        if (info.isSymLink() && !info.exists()) return QStringLiteral("失效链接");
+        return sizeString(info.size());
+    }
+    static void splitExtension(const QString &name, QString &stem, QString &extension)
+    {
+        static const QStringList compound = {
+            QStringLiteral("tar.gz"), QStringLiteral("tar.xz"), QStringLiteral("tar.bz2")};
+        const QString lower = name.toLower();
+        for (const QString &item : compound) {
+            const QString tail = QLatin1Char('.') + item;
+            if (lower.endsWith(tail)) {
+                stem = name.left(name.size() - tail.size());
+                extension = name.mid(name.size() - tail.size());
+                return;
+            }
+        }
+        const int dot = name.lastIndexOf(QLatin1Char('.'));
+        if (dot > 0) {
+            stem = name.left(dot);
+            extension = name.mid(dot);
+        } else {
+            stem = name;
+            extension.clear();
+        }
+    }
+    static QString uniquePath(const QString &directory, const QString &name)
+    {
+        const QString first = directory + QLatin1Char('/') + name;
+        if (!QFileInfo::exists(first))
+            return first;
+        QString stem;
+        QString extension;
+        splitExtension(name, stem, extension);
+        for (int index = 2; index < 1000; ++index) {
+            const QString candidate = directory + QLatin1Char('/') + stem +
+                    QStringLiteral(" (%1)").arg(index) + extension;
+            if (!QFileInfo::exists(candidate))
+                return candidate;
+        }
+        return directory + QLatin1Char('/') + stem + QStringLiteral(" (copy)") + extension;
+    }
+    static QString readSymLink(const QString &path)
+    {
+        char buffer[4096];
+        const QByteArray encoded = QFile::encodeName(path);
+        const ssize_t length = ::readlink(encoded.constData(), buffer, sizeof(buffer) - 1);
+        if (length <= 0)
+            return QString();
+        buffer[length] = '\0';
+        QString target = QFile::decodeName(QByteArray(buffer, static_cast<int>(length)));
+        if (!QFileInfo(target).isAbsolute())
+            target = QDir::cleanPath(QFileInfo(path).absolutePath() + QLatin1Char('/') + target);
+        return target;
+    }
+    static void removePath(const QString &path)
+    {
+        const QFileInfo info(path);
+        if (info.isDir() && !info.isSymLink())
+            QDir(path).removeRecursively();
+        else
+            QFile::remove(path);
+    }
+    static bool copyRecursive(const QString &source, const QString &target)
+    {
+        QFileInfo info(source);
+        if (info.isSymLink()) {
+            const QString linkTarget = readSymLink(source);
+            if (linkTarget.isEmpty())
+                return false;
+            return QFile::link(linkTarget, target);
+        }
+        if (info.isDir()) {
+            if (!QDir().mkpath(target))
+                return false;
+            const QFileInfoList children = QDir(source).entryInfoList(
+                        QDir::AllEntries | QDir::NoDotAndDotDot | QDir::Hidden | QDir::System);
+            for (const QFileInfo &child : children) {
+                if (!copyRecursive(child.absoluteFilePath(), target + QLatin1Char('/') + child.fileName()))
+                    return false;
+            }
+            return true;
+        }
+        return QFile::copy(source, target);
+    }
+    static QString shellQuote(const QString &text)
+    {
+        QString escaped = text;
+        escaped.replace(QLatin1Char('\''), QStringLiteral("'\\''"));
+        return QLatin1Char('\'') + escaped + QLatin1Char('\'');
+    }
+    static QVariantMap runTool(const QString &program, const QStringList &arguments,
+                               const QString &workDir, int timeoutMs)
+    {
+        const QString executable = QStandardPaths::findExecutable(program);
+        if (executable.isEmpty())
+            return failure(QStringLiteral("未找到命令：") + program);
+        QProcess process;
+        process.setProcessChannelMode(QProcess::MergedChannels);
+        if (!workDir.isEmpty())
+            process.setWorkingDirectory(workDir);
+        process.start(executable, arguments);
+        if (!process.waitForStarted(5000))
+            return failure(QStringLiteral("无法启动：") + program);
+        if (!process.waitForFinished(timeoutMs)) {
+            process.kill();
+            process.waitForFinished(2000);
+            return failure(QStringLiteral("操作超时：") + program);
+        }
+        const bool ok = process.exitStatus() == QProcess::NormalExit && process.exitCode() == 0;
+        QVariantMap result = ok ? success(QString()) : failure(QStringLiteral("命令失败：") + program);
+        result.insert(QStringLiteral("output"), QString::fromLocal8Bit(process.readAll()).right(4000));
+        return result;
+    }
+    static QVariantMap runShell(const QString &command, const QString &workDir, int timeoutMs)
+    {
+        QProcess process;
+        process.setProcessChannelMode(QProcess::MergedChannels);
+        if (!workDir.isEmpty())
+            process.setWorkingDirectory(workDir);
+        process.start(QStringLiteral("/bin/sh"), QStringList() << QStringLiteral("-c") << command);
+        if (!process.waitForStarted(5000))
+            return failure(QStringLiteral("无法启动 shell"));
+        if (!process.waitForFinished(timeoutMs)) {
+            process.kill();
+            process.waitForFinished(2000);
+            return failure(QStringLiteral("操作超时"));
+        }
+        const bool ok = process.exitStatus() == QProcess::NormalExit && process.exitCode() == 0;
+        QVariantMap result = ok ? success(QString()) : failure(QStringLiteral("命令执行失败"));
+        result.insert(QStringLiteral("output"), QString::fromLocal8Bit(process.readAll()).right(4000));
+        return result;
     }
 };
 
@@ -276,25 +651,69 @@ class Z03PlusTextFileService : public QObject
 public:
     Q_INVOKABLE QVariantMap readText(const QString &path) const
     {
-        QVariantMap result;
-        const QString suffix = QFileInfo(path).suffix().toLower();
-        if (!Z03PlusFileService::allowed(path) || (suffix != QStringLiteral("txt") && suffix != QStringLiteral("md") && suffix != QStringLiteral("lrc") && suffix != QStringLiteral("log"))) {
-            result.insert(QStringLiteral("ok"), false); result.insert(QStringLiteral("error"), QStringLiteral("不允许打开该文件")); return result;
+        const QString target = Z03PlusFileService::normalize(path);
+        QFileInfo info(target);
+        if (target.isEmpty() || !info.exists() || info.isDir())
+            return failure(QStringLiteral("文件不存在"));
+        const qint64 maxBytes = 4 * 1024 * 1024;
+        if (info.size() > maxBytes)
+            return failure(QStringLiteral("文件超过 4 MB，无法打开"));
+        QFile file(target);
+        if (!file.open(QIODevice::ReadOnly)) {
+            return failure(QStringLiteral("打开失败，请检查权限"));
         }
-        QFile file(path);
-        if (!file.open(QIODevice::ReadOnly | QIODevice::Text)) {
-            result.insert(QStringLiteral("ok"), false); result.insert(QStringLiteral("error"), QStringLiteral("打开文件失败")); return result;
-        }
-        const qint64 maxBytes = 2 * 1024 * 1024;
         const QByteArray bytes = file.read(maxBytes + 1);
-        if (bytes.size() > maxBytes) {
-            result.insert(QStringLiteral("ok"), false); result.insert(QStringLiteral("error"), QStringLiteral("文件超过 2 MB，无法打开")); return result;
+        if (bytes.size() > maxBytes)
+            return failure(QStringLiteral("文件超过 4 MB，无法打开"));
+        QString text = QString::fromUtf8(bytes);
+        if (text.contains(QChar::ReplacementCharacter)) {
+            QTextCodec *codec = QTextCodec::codecForName("GB18030");
+            if (codec)
+                text = codec->toUnicode(bytes);
         }
-        result.insert(QStringLiteral("ok"), true);
-        result.insert(QStringLiteral("content"), QString::fromUtf8(bytes));
+        QVariantMap result = success();
+        result.insert(QStringLiteral("content"), text);
+        result.insert(QStringLiteral("size"), info.size());
         return result;
     }
+
+    Q_INVOKABLE QVariantMap saveText(const QString &path, const QString &content) const
+    {
+        const QString target = Z03PlusFileService::normalize(path);
+        if (target.isEmpty() || target == QStringLiteral("/"))
+            return failure(QStringLiteral("路径无效"));
+        const QByteArray bytes = content.toUtf8();
+        if (bytes.size() > 4 * 1024 * 1024)
+            return failure(QStringLiteral("内容超过 4 MB，无法保存"));
+        QSaveFile file(target);
+        if (!file.open(QIODevice::WriteOnly)) {
+            return failure(QStringLiteral("无法写入，请检查权限"));
+        }
+        if (file.write(bytes) != bytes.size()) {
+            file.cancelWriting();
+            return failure(QStringLiteral("写入失败，请检查存储空间"));
+        }
+        if (!file.commit())
+            return failure(QStringLiteral("保存失败，请检查权限"));
+        return success();
+    }
+
     Q_INVOKABLE QString fileName(const QString &path) const { return QFileInfo(path).fileName(); }
+
+private:
+    static QVariantMap failure(const QString &message)
+    {
+        QVariantMap result;
+        result.insert(QStringLiteral("ok"), false);
+        result.insert(QStringLiteral("error"), message);
+        return result;
+    }
+    static QVariantMap success()
+    {
+        QVariantMap result;
+        result.insert(QStringLiteral("ok"), true);
+        return result;
+    }
 };
 
 // Minimal native bridge for the original voice object. It only invokes the
@@ -1597,6 +2016,9 @@ public:
         QFile::setPermissions(scriptPath, QFile::ReadOwner | QFile::WriteOwner | QFile::ExeOwner |
                                                QFile::ReadGroup | QFile::ExeGroup |
                                                QFile::ReadOther | QFile::ExeOther);
+        QFile logFile(QStringLiteral("/home/user/z03plus/nix-install.log"));
+        if (logFile.open(QIODevice::WriteOnly | QIODevice::Truncate))
+            logFile.close();
         appendLog(QStringLiteral("开始安装 Nix（单用户模式，清华 TUNA 镜像）…"));
         mProgress = 1;
         mStage = QStringLiteral("准备安装…");
@@ -1757,6 +2179,9 @@ private:
         const QByteArray data = mProcess.readAll();
         if (data.isEmpty())
             return;
+        QFile logFile(QStringLiteral("/home/user/z03plus/nix-install.log"));
+        if (logFile.open(QIODevice::Append))
+            logFile.write(data);
         if (mOutput.size() < 262144)
             mOutput.append(data.left(262144 - mOutput.size()));
         mPending.append(data);
@@ -1868,61 +2293,195 @@ private:
             "#!/bin/sh\n"
             "export HOME=/home/user\n"
             "export PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin\n"
+            "if [ -f /etc/ssl/certs/ca-certificates.crt ]; then\n"
+            "  export SSL_CERT_FILE=/etc/ssl/certs/ca-certificates.crt\n"
+            "  export NIX_SSL_CERT_FILE=/etc/ssl/certs/ca-certificates.crt\n"
+            "fi\n"
             "MIRROR=https://mirrors.tuna.tsinghua.edu.cn\n"
+            "FALLBACK=https://mirrors.nju.edu.cn\n"
             "NIX_VER=2.9.2\n"
             "TARBALL=nix-$NIX_VER-armv7l-linux.tar.xz\n"
             "WORK=/home/user/z03plus\n"
+            "NIX_ROOT=/home/nix\n"
             "echo '[nix-progress] 3 检查环境'\n"
             "echo '[nix] checking existing installation'\n"
             "if command -v nix-env >/dev/null 2>&1 || [ -x /nix/var/nix/profiles/default/bin/nix-env ]; then\n"
             "  echo '[nix] already installed'\n"
             "  exit 0\n"
             "fi\n"
-            "if [ ! -d /nix ]; then\n"
-            "  mkdir -p /nix 2>/dev/null || true\n"
+            "echo '[nix-progress] 8 准备 /nix 目录'\n"
+            "if [ -L /nix ] && [ \"$(id -u)\" = 0 ]; then\n"
+            "  echo '[nix] /nix is a symlink, replacing it with a real directory bound to' \"$NIX_ROOT\"\n"
+            "  mount -o remount,rw / 2>/dev/null\n"
+            "  rm -f /nix 2>/dev/null\n"
+            "  mkdir -p /nix 2>/dev/null\n"
             "fi\n"
-            "echo '[nix-progress] 8 检查 /nix 目录'\n"
-            "if [ ! -w /nix ]; then\n"
-            "  echo '[nix] /nix is missing or not writable; root filesystem looks read-only'\n"
-            "  echo '[nix] Nix needs a writable /nix; free space and make the rootfs writable first'\n"
+            "if [ -L /nix ]; then\n"
+            "  echo '[nix] /nix is a symlink to:' $(readlink /nix)\n"
+            "  echo '[nix] Nix 2.9 rejects a symlinked /nix (store parent must be a real directory).'\n"
+            "  echo '[nix] Run these commands once, then retry the install:'\n"
+            "  echo '  mount -o remount,rw /'\n"
+            "  echo '  rm /nix'\n"
+            "  echo '  mkdir -p /nix'\n"
+            "  echo '  mount --bind /home/nix /nix'\n"
+            "  exit 3\n"
+            "fi\n"
+            "if [ ! -d /nix ]; then\n"
+            "  mkdir -p /nix 2>/dev/null || {\n"
+            "    echo '[nix] cannot create /nix: root filesystem is read-only'\n"
+            "    echo '[nix] Run: mount -o remount,rw / && mkdir -p /nix'\n"
+            "    exit 3\n"
+            "  }\n"
+            "fi\n"
+            "if ! grep -q ' /nix ' /proc/mounts 2>/dev/null; then\n"
+            "  mkdir -p \"$NIX_ROOT\" 2>/dev/null\n"
+            "  if [ -d \"$NIX_ROOT\" ] && [ \"$(id -u)\" = 0 ]; then\n"
+            "    mount --bind \"$NIX_ROOT\" /nix 2>/dev/null || true\n"
+            "  fi\n"
+            "fi\n"
+            "mkdir -p /nix/store /nix/var/nix 2>/dev/null || true\n"
+            "if [ ! -w /nix/store ]; then\n"
+            "  echo '[nix] /nix/store is not writable'\n"
+            "  echo '[nix] Remount root read-write, or bind-mount a real directory onto /nix'\n"
             "  exit 3\n"
             "fi\n"
             "mkdir -p \"$WORK\" || exit 3\n"
             "for tool in tar xz sha256sum; do\n"
             "  command -v $tool >/dev/null 2>&1 || { echo \"[nix] missing required tool: $tool\"; exit 4; }\n"
             "done\n"
-            "cd \"$WORK\" || exit 3\n"
-            "echo '[nix] downloading Nix '$NIX_VER' from TUNA mirror'\n"
-            "echo '[nix-progress] 15 下载安装包（约 15 MB）'\n"
-            "if command -v curl >/dev/null 2>&1; then\n"
-            "  curl -fL --connect-timeout 15 -o \"$TARBALL\" \"$MIRROR/nix/nix-$NIX_VER/$TARBALL\" &\n"
-            "else\n"
-            "  wget -O \"$TARBALL\" \"$MIRROR/nix/nix-$NIX_VER/$TARBALL\" &\n"
+            "FREE=$(df -k /home 2>/dev/null | awk 'NR==2 {print $4}')\n"
+            "case \"$FREE\" in ''|*[!0-9]*) FREE=0;; esac\n"
+            "if [ \"$FREE\" -gt 0 ] && [ \"$FREE\" -lt 420000 ]; then\n"
+            "  echo \"[nix] warning: only $((FREE / 1024)) MB free on /home; Nix store may need about 400 MB\"\n"
             "fi\n"
-            "FETCH=$!\n"
-            "while kill -0 $FETCH 2>/dev/null; do\n"
-            "  SIZE=$(wc -c < \"$TARBALL\" 2>/dev/null || echo 0)\n"
-            "  PCT=$((15 + SIZE * 30 / 15547952))\n"
-            "  [ $PCT -gt 45 ] && PCT=45\n"
-            "  echo \"[nix-progress] $PCT 下载中 $((SIZE / 1024)) KB / 15183 KB\"\n"
-            "  sleep 2\n"
+            "cd \"$WORK\" || exit 3\n"
+            "echo '[nix-progress] 15 下载安装包（约 15 MB）'\n"
+            "FOUND=\n"
+            "INDEX=1\n"
+            "for BASE in \"$MIRROR\" \"$FALLBACK\" http://mirrors.tuna.tsinghua.edu.cn https://mirrors.tuna.tsinghua.edu.cn; do\n"
+            "  URL=\"$BASE/nix/nix-$NIX_VER/$TARBALL\"\n"
+            "  OUT=\"$TARBALL.$INDEX\"\n"
+            "  echo \"[nix] downloading $URL\"\n"
+            "  CURL_EXTRA=\n"
+            "  if [ $INDEX -eq 4 ]; then\n"
+            "    CURL_EXTRA=-k\n"
+            "    echo '[nix] retrying without certificate verification (check system clock)'\n"
+            "  fi\n"
+            "  if command -v curl >/dev/null 2>&1; then\n"
+            "    curl -fL $CURL_EXTRA --connect-timeout 15 --max-time 900 --retry 2 -o \"$OUT\" \"$URL\" &\n"
+            "  elif command -v wget >/dev/null 2>&1; then\n"
+            "    wget -O \"$OUT\" \"$URL\" &\n"
+            "  else\n"
+            "    echo '[nix] neither curl nor wget is available'\n"
+            "    exit 4\n"
+            "  fi\n"
+            "  FETCH=$!\n"
+            "  while kill -0 $FETCH 2>/dev/null; do\n"
+            "    if [ -f \"$OUT\" ]; then SIZE=$(wc -c < \"$OUT\" 2>/dev/null | tr -d ' \\r\\n'); else SIZE=0; fi\n"
+            "    case \"$SIZE\" in ''|*[!0-9]*) SIZE=0;; esac\n"
+            "    PCT=$((15 + SIZE * 30 / 15547952))\n"
+            "    [ \"$PCT\" -gt 45 ] && PCT=45\n"
+            "    echo \"[nix-progress] $PCT 下载中 $((SIZE / 1024)) KB / 15183 KB\"\n"
+            "    sleep 2\n"
+            "  done\n"
+            "  wait $FETCH\n"
+            "  STATUS=$?\n"
+            "  if [ -f \"$OUT\" ]; then SIZE=$(wc -c < \"$OUT\" 2>/dev/null | tr -d ' \\r\\n'); else SIZE=0; fi\n"
+            "  case \"$SIZE\" in ''|*[!0-9]*) SIZE=0;; esac\n"
+            "  if [ $STATUS -eq 0 ] && [ $SIZE -gt 1000000 ]; then\n"
+            "    FOUND=\"$OUT\"\n"
+            "    break\n"
+            "  fi\n"
+            "  echo \"[nix] download failed: status=$STATUS size=$SIZE\"\n"
+            "  INDEX=$((INDEX + 1))\n"
             "done\n"
-            "wait $FETCH || { echo '[nix] download failed'; exit 4; }\n"
+            "if [ -z \"$FOUND\" ]; then\n"
+            "  echo '[nix] all mirrors failed; check Wi-Fi, DNS, system clock and CA certificates'\n"
+            "  exit 4\n"
+            "fi\n"
+            "TARBALL=\"$FOUND\"\n"
             "echo '[nix-progress] 46 校验安装包'\n"
             "echo '983299e3d1b6fdadc487624d94e66a4e7b268c4acc77707739ef1bb78783a4a4  '$TARBALL > \"$TARBALL.sha256\"\n"
             "sha256sum -c \"$TARBALL.sha256\" >/dev/null 2>&1 || { echo '[nix] checksum mismatch'; exit 4; }\n"
-            "mkdir -p \"$WORK/nix-unpack\"\n"
-            "echo '[nix-progress] 50 解压安装包'\n"
-            "echo '[nix] unpacking'\n"
-            "tar -xJf \"$TARBALL\" -C \"$WORK/nix-unpack\" || {\n"
-            "  xz -dc \"$TARBALL\" | tar -xf - -C \"$WORK/nix-unpack\" || { echo '[nix] unpack failed'; exit 4; }\n"
+            "echo '[nix-progress] 50 解压安装包到 /nix'\n"
+            "mkdir -p /nix/var/nix/db /nix/var/nix/profiles /nix/var/nix/gcroots /nix/var/nix/temproots || {\n"
+            "  echo '[nix] cannot create directories under /nix'; exit 5; }\n"
+            "mkdir -p /nix/var/nix/temproots/.z03-write-test && rmdir /nix/var/nix/temproots/.z03-write-test || {\n"
+            "  echo '[nix] /nix is not writable'; exit 5; }\n"
+            "FREE=$(df -k /nix 2>/dev/null | awk 'NR==2 {print $4}')\n"
+            "case \"$FREE\" in ''|*[!0-9]*) FREE=0;; esac\n"
+            "echo \"[nix] free space under /nix: $((FREE / 1024)) MB\"\n"
+            "if [ \"$FREE\" -gt 0 ] && [ \"$FREE\" -lt 120000 ]; then\n"
+            "  echo '[nix] need about 120 MB free under /nix for the 89 MB store'\n"
+            "  exit 5\n"
+            "fi\n"
+            "for d in \"$WORK/nix-unpack\" \"$WORK/nix-extract\"; do\n"
+            "  [ -d \"$d\" ] && rm -rf \"$d\" 2>/dev/null || true\n"
+            "done\n"
+            "echo '[nix] unpacking installer into /nix'\n"
+            "if ! EXTRACT_UNSAFE_SYMLINKS=1 tar -xJf \"$TARBALL\" -C /nix; then\n"
+            "  echo '[nix] tar -J failed, retrying with xz pipe'\n"
+            "  xz -dc \"$TARBALL\" | EXTRACT_UNSAFE_SYMLINKS=1 tar -xf - -C /nix || {\n"
+            "    echo '[nix] unpack into /nix failed'; exit 5; }\n"
+            "fi\n"
+            "SRC=\"/nix/nix-$NIX_VER-armv7l-linux\"\n"
+            "[ -d \"$SRC/store\" ] || { echo '[nix] unpacked store not found at' $SRC; exit 5; }\n"
+            "echo '[nix] replacing store with freshly unpacked copy'\n"
+            "if [ -e /nix/store ]; then\n"
+            "  mv /nix/store /nix/store.old.$$ || { echo '[nix] cannot move old store aside'; exit 5; }\n"
+            "fi\n"
+            "mv \"$SRC/store\" /nix/store || { echo '[nix] cannot move new store into place'; exit 5; }\n"
+            "CNT=$(ls /nix/store 2>/dev/null | wc -l)\n"
+            "echo \"[nix] unpacked store paths: $CNT\"\n"
+            "if [ \"$CNT\" -lt 20 ]; then\n"
+            "  echo '[nix] store looks incomplete; restoring previous store'\n"
+            "  mv /nix/store /nix/store.bad.$$ 2>/dev/null || true\n"
+            "  if [ -e /nix/store.old.$$ ]; then mv /nix/store.old.$$ /nix/store 2>/dev/null || true; fi\n"
+            "  exit 5\n"
+            "fi\n"
+            "mv -f \"$SRC/.reginfo\" /nix/.reginfo || { echo '[nix] cannot move .reginfo'; exit 5; }\n"
+            "rm -rf \"$SRC\" /nix/store.old.$$ /nix/store.bad.$$ 2>/dev/null || true\n"
+            "echo '[nix] resetting nix database'\n"
+            "if [ -e /nix/var/nix/db ]; then\n"
+            "  mv /nix/var/nix/db /nix/var/nix/db.old.$$ 2>/dev/null || true\n"
+            "fi\n"
+            "mkdir -p /nix/var/nix/db || { echo '[nix] cannot create database directory'; exit 5; }\n"
+            "rm -rf /nix/var/nix/db.old.$$ 2>/dev/null || true\n"
+            "echo '[nix] removing installer archive to free space'\n"
+            "rm -f \"$TARBALL\" \"$TARBALL.sha256\" 2>/dev/null || true\n"
+            "echo '[nix-progress] 60 准备 Nix 运行环境'\n"
+            "NIXBIN=/nix/store/av4qi9mf47fjna4h35dxv79bivn1lcfw-nix-2.9.2-armv7l-unknown-linux-gnueabihf\n"
+            "CACERT=/nix/store/914z9l06a48wfsa32nvb4zy9kvflvz3g-nss-cacert-3.66-armv7l-unknown-linux-gnueabihf\n"
+            "[ -x \"$NIXBIN/bin/nix-store\" ] || {\n"
+            "  echo '[nix] nix-store binary missing after extraction'\n"
+            "  ls /nix/store | head -20\n"
+            "  exit 5\n"
             "}\n"
-            "INSTALLER=\"$WORK/nix-unpack/nix-$NIX_VER-armv7l-linux/install\"\n"
-            "[ -f \"$INSTALLER\" ] || { echo '[nix] installer not found'; exit 4; }\n"
-            "echo '[nix-progress] 60 安装到 /nix'\n"
-            "echo '[nix] running single-user installer (no channel)'\n"
-            "sh \"$INSTALLER\" --no-daemon --no-channel-add </dev/null || { echo '[nix] installer failed'; exit 5; }\n"
-            ". /home/user/.nix-profile/etc/profile.d/nix.sh 2>/dev/null || true\n"
+            "if ! \"$NIXBIN/bin/nix-store\" --version; then\n"
+            "  echo '[nix] nix-store cannot execute (missing glibc store path?)'\n"
+            "  exit 5\n"
+            "fi\n"
+            "mkdir -p /home/user/.config/nix\n"
+            "if ! grep -q '^build-users-group' /home/user/.config/nix/nix.conf 2>/dev/null; then\n"
+            "  printf 'build-users-group =\\nsandbox = false\\n' >> /home/user/.config/nix/nix.conf\n"
+            "fi\n"
+            "echo '[nix-progress] 70 注册安装路径'\n"
+            "if ! \"$NIXBIN/bin/nix-store\" --load-db < /nix/.reginfo; then\n"
+            "  echo '[nix] nix-store --load-db failed'\n"
+            "  exit 5\n"
+            "fi\n"
+            "echo '[nix-progress] 76 配置用户环境'\n"
+            "export USER=${USER:-root}\n"
+            "export NIX_PROFILES=\"/nix/var/nix/profiles/default /home/user/.nix-profile\"\n"
+            "export PATH=\"/home/user/.nix-profile/bin:/nix/var/nix/profiles/default/bin:$PATH\"\n"
+            "if ! \"$NIXBIN/bin/nix-env\" -i \"$NIXBIN\"; then\n"
+            "  echo '[nix] nix-env -i nix failed'\n"
+            "  exit 5\n"
+            "fi\n"
+            "\"$NIXBIN/bin/nix-env\" -i \"$CACERT\" 2>/dev/null || echo '[nix] warning: could not link cacert'\n"
+            "if [ -f /home/user/.nix-profile/etc/ssl/certs/ca-bundle.crt ]; then\n"
+            "  export NIX_SSL_CERT_FILE=/home/user/.nix-profile/etc/ssl/certs/ca-bundle.crt\n"
+            "fi\n"
             "if ! command -v nix-env >/dev/null 2>&1 && [ ! -x /nix/var/nix/profiles/default/bin/nix-env ]; then\n"
             "  echo '[nix] nix-env not found after install'\n"
             "  exit 6\n"
@@ -1933,12 +2492,19 @@ private:
             "  echo 'trusted-public-keys = cache.nixos.org-1:6NCHdD59X431o0gWypbMrAURkbJ16ZPMQFGspcDShjY=' >> /home/user/.config/nix/nix.conf\n"
             "fi\n"
             "echo '[nix-progress] 82 配置 nixpkgs 频道'\n"
-            "echo '[nix] adding nixos-22.05 channel from TUNA mirror'\n"
             "nix-channel --remove nixpkgs >/dev/null 2>&1 || true\n"
-            "nix-channel --add \"$MIRROR/nix-channels/nixos-22.05\" nixpkgs || {\n"
+            "CHANNEL_OK=0\n"
+            "for BASE in \"$MIRROR\" \"$FALLBACK\"; do\n"
+            "  echo '[nix] adding nixos-22.05 channel from' $BASE\n"
+            "  if nix-channel --add \"$BASE/nix-channels/nixos-22.05\" nixpkgs; then\n"
+            "    CHANNEL_OK=1\n"
+            "    break\n"
+            "  fi\n"
+            "done\n"
+            "if [ $CHANNEL_OK -eq 0 ]; then\n"
             "  echo '[nix] channel add failed'\n"
             "  exit 7\n"
-            "}\n"
+            "fi\n"
             "echo '[nix-progress] 90 更新频道索引'\n"
             "nix-channel --update || { echo '[nix] channel update failed'; exit 7; }\n"
             "echo '[nix-progress] 100 安装完成'\n"
@@ -2142,6 +2708,7 @@ private:
 
 static void registerZ03PlusQmlTypes()
 {
+    qputenv("QML_DISABLE_DISK_CACHE", "1");
     static bool bridgeStarted = false;
     if (!bridgeStarted && QCoreApplication::instance()) {
         new Z03PlusAiBridge(QCoreApplication::instance());
@@ -2161,6 +2728,38 @@ static void registerZ03PlusQmlTypes()
     qmlRegisterType<Z03PlusBrowserService>("Z03Ultra", 1, 0, "BrowserService");
 }
 Q_COREAPP_STARTUP_FUNCTION(registerZ03PlusQmlTypes)
+
+static void ensureNixBindMount()
+{
+    QFile mounts(QStringLiteral("/proc/mounts"));
+    if (!mounts.open(QIODevice::ReadOnly))
+        return;
+    const QByteArray table = mounts.readAll();
+    mounts.close();
+    if (table.contains(" /nix "))
+        return;
+
+    const QString script = QStringLiteral(
+        "LOG=/home/user/z03plus/nix-mount.log\n"
+        "if [ \"$(id -u)\" = 0 ]; then\n"
+        "  if [ -L /nix ]; then\n"
+        "    mount -o remount,rw / 2>/dev/null\n"
+        "    rm -f /nix 2>/dev/null\n"
+        "    mkdir -p /nix 2>/dev/null\n"
+        "    echo \"$(date) replaced /nix symlink\" >>$LOG\n"
+        "  fi\n"
+        "  if [ -d /nix ] && [ ! -L /nix ]; then\n"
+        "    mkdir -p /home/nix 2>/dev/null\n"
+        "    if mount --bind /home/nix /nix 2>>$LOG; then\n"
+        "      echo \"$(date) bind /home/nix -> /nix\" >>$LOG\n"
+        "    fi\n"
+        "  fi\n"
+        "fi\n");
+    QProcess process;
+    process.start(QStringLiteral("/bin/sh"), QStringList() << QStringLiteral("-c") << script);
+    process.waitForFinished(5000);
+}
+Q_COREAPP_STARTUP_FUNCTION(ensureNixBindMount)
 
 static void logResolvedResource()
 {

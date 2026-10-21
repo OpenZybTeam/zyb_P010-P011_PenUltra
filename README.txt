@@ -10,6 +10,20 @@ Z03Ultra 是基于 Z03Plus 扩展项目发展而来的分支，保留其 overlay
 
     设置 -> Z03Ultra 扩展
 
+一键安装 / 更新
+---------------
+设备联网并以 root 执行：
+
+    curl -fsSL -o /tmp/z03ultra-install.sh https://raw.githubusercontent.com/OpenZybTeam/zyb_P010-P011_PenUltra/main/install.sh
+    sh /tmp/z03ultra-install.sh
+
+脚本读取 GitHub 最新 Release，校验 SHA256，备份旧文件到
+/home/user/z03plus/backup/，安装注入库、RCC、Z03Plus 副本与启动钩子，
+然后重启主界面并检查注入结果。
+
+无法访问 GitHub 时：
+    Z03ULTRA_BASE=<release 下载目录> sh /tmp/z03ultra-install.sh
+
 设备环境
 --------
 - 主程序：/usr/bin/Z03
@@ -21,7 +35,8 @@ Z03Ultra 是基于 Z03Plus 扩展项目发展而来的分支，保留其 overlay
 
 已实现
 ------
-1. ARMv7 动态库注入：将 DT_NEEDED 添加到 Z03 的副本，不覆盖原始 /usr/bin/Z03。
+1. ARMv7 动态库注入：将 DT_NEEDED 添加到 Z03 的副本，不覆盖原始 /usr/bin/Z03；
+   开机由 zybz03qt-init 在启动守护脚本前把副本 bind mount 到 /usr/bin/Z03，自动加载 libZ03Plus.so。
 2. Hook qRegisterResourceData()，在原厂 QRC 注册前加载 Z03Ultra overlay。
 3. 从运行中的 Z03 导出完整 Qt 资源，设备端导出目录：
        /home/user/z03plus/qrc/
@@ -29,15 +44,22 @@ Z03Ultra 是基于 Z03Plus 扩展项目发展而来的分支，保留其 overlay
        qrc:/ZybQmlFiles/ZybSet/SetMainPage.qml
 5. 设置页新增“Z03Ultra 扩展”入口。
 6. Z03Ultra 首页当前包含文件管理、文本阅读、存储空间、音乐播放、录音、终端 Shell、
-   应用商店（Nix）、网页浏览、关于设备、显示与灯光、ADB/SSH、AI 对话与息屏等入口。
-   - 存储空间：显示各分区用量与文件系统，支持清理缓存。
+   应用商店（Nix）、网页浏览、关于设备、关于 Z03Ultra、显示与灯光、ADB/SSH、AI 对话等入口。
+   首页采用 Material 风格卡片，右上角可切换横屏/竖屏（仅作用于 Ultra 页面）。
+   - 文件管理：从 / 浏览整个文件系统，支持新建、复制、剪切、重命名、删除、
+     压缩、解压与属性查看。
+   - 文本阅读/编辑：任意文本文件可预览与编辑，保存时原子写入。
+
    - 音乐播放：扫描 /mnt/data 与 /home/user 下的音频并通过 MediaPlayer 播放。
    - 录音：按 arecord/tinycap/gst-launch-1.0 选择后端，输出 16 kHz 单声道 WAV。
    - 终端 Shell：/bin/sh -c 执行命令，实时回显输出。
-   - 应用商店：使用 Nix（单用户安装，TUNA 镜像下载 2.9.2 + nixos-22.05 频道），
-     支持搜索、安装、已安装列表与频道更新。
-   - 网页浏览：纯文本浏览器，支持地址栏、搜索、后退与链接跳转。
+   - 应用商店：使用 Nix（安装在 /home/nix，启动时自动 bind mount 到 /nix；TUNA/NJU 镜像
+     下载 2.9.2，复制 store 后手动注册并安装 profile，添加 nixos-22.05
+     频道），支持搜索、安装、已安装列表与频道更新。
+   - 网页浏览：使用系统自带 QtWebEngine 渲染完整网页（JS/CSS/图片/视频），
+     支持点按链接、触摸滚动、前进后退；移动版 UA 适配窄屏。
    - 关于设备：显示型号、内核、架构、CPU、内存、运行时间与根分区信息。
+   - 关于 Z03Ultra：显示 OpenZybTeam 与 PenPlus 项目地址。
    - “显示与灯光”会打开原厂 SetLightPage.qml。
 
 重要：RCC 格式
@@ -83,20 +105,27 @@ Z03Ultra 是基于 Z03Plus 扩展项目发展而来的分支，保留其 overlay
     /home/user/z03plus/libZ03Plus.so
     /home/user/z03plus/z03plus.rcc
 
-5. 启动脚本将 /usr/bin/Z03 替换为 Z03Plus 副本的启动路径。
+5. 开机钩子在守护脚本启动前执行：
+       mount --bind /home/user/z03plus/Z03Plus /usr/bin/Z03
+   原文件不改，守护脚本启动的就是带 DT_NEEDED 的副本。
 
 回退
 ----
-原厂 Z03 不应被覆盖。将启动脚本恢复为：
+原厂 Z03 不应被覆盖。恢复启动钩子并重启：
 
-    /usr/bin/Z03 -platform wayland > /dev/null &
+    mount -o remount,rw /
+    cp -a /home/user/z03plus/zybz03qt-init.orig /etc/init.d/zybz03qt-init
+    sync
+    mount -o remount,ro /
+    kill $(pidof Z03)
 
-然后重启 Z03 服务即可。
+bind mount 随重启消失，守护脚本恢复启动原厂 /usr/bin/Z03。
+旧版本文件位于 /home/user/z03plus/backup/。
 
 注意事项
 --------
-- 修改 QML 或 RCC 后，须删除：/home/.cache/Z03Plus/
-  并重启 Z03Plus，QML 改动才会重新加载。
+- 修改 QML 或 RCC 后重启主界面即可。库启动时设置
+  QML_DISABLE_DISK_CACHE=1，不再依赖手工清理缓存。
 - 原厂 BasicButton 默认 checkable: true。Z03Plus 功能入口必须显式：
 
     checkable: false

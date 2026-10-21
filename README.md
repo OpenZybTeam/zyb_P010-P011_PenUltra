@@ -10,29 +10,49 @@ Z03Ultra 是基于 Z03Plus 扩展项目发展而来的分支，保留其 overlay
 设置 -> Z03Ultra 扩展
 ```
 
+## 一键安装 / 更新
+
+设备联网并具备 root 权限时，在设备终端执行：
+
+```sh
+curl -fsSL -o /tmp/z03ultra-install.sh https://raw.githubusercontent.com/OpenZybTeam/zyb_P010-P011_PenUltra/main/install.sh
+sh /tmp/z03ultra-install.sh
+```
+
+脚本会读取 GitHub 最新 Release，校验 `SHA256SUMS`，把旧文件备份到 `/home/user/z03plus/backup/`，安装 `libZ03Plus.so`、`z03plus.rcc`、`Z03Plus`、`z03ultra-boot.sh`，向 `/etc/init.d/zybz03qt-init` 写入持久化启动钩子，然后重启主界面并检查注入结果。
+
+- 无法访问 GitHub 时，可指定下载目录：`Z03ULTRA_BASE=<release 下载目录> sh /tmp/z03ultra-install.sh`
+- 指定其他仓库：`Z03ULTRA_REPO=<owner/repo> sh /tmp/z03ultra-install.sh`
+- 回退见下文“回退”一节。
+
+
 ## 重要提示
 
 - 本项目仅面向具备相同软件环境的 Z03 / P010 / P011 设备，其他型号未经测试。
 - 操作前请完整备份设备数据和启动配置。使用者须自行承担刷写、部署及启动失败的风险。
 - 不要直接修改或覆盖原厂 `/usr/bin/Z03`；始终使用 `/home/user/z03plus/Z03Plus` 中的副本。
-- 本仓库只提供源码，不包含原厂二进制、Qt 库、工具链、设备导出资源或编译产物。
+- 源码仓库不包含原厂二进制、Qt 库、工具链与设备导出资源；可直接安装的产物通过 GitHub Release 发布。
+- 一键安装会临时把 rootfs 改为可写，以便写入 `/etc/init.d/zybz03qt-init` 启动钩子；完成后恢复只读。
 - 为兼容既有设备安装，动态库、启动器与部署目录沿用 `libZ03Plus.so`、`Z03Plus`、`/home/user/z03plus/` 命名；源码项目与界面统一使用 Z03Ultra 名称。
 
 ## 已实现
 
-1. ARMv7 动态库注入：将 `DT_NEEDED` 添加到 Z03 的副本，不覆盖原始 `/usr/bin/Z03`。
+1. ARMv7 动态库注入：将 `DT_NEEDED` 添加到 Z03 的副本，不覆盖原始 `/usr/bin/Z03`；开机由 `zybz03qt-init` 在启动守护脚本前把副本 bind mount 到 `/usr/bin/Z03`，自动加载 `libZ03Plus.so`。
 2. Hook `qRegisterResourceData()`，在原厂 QRC 注册前加载 Z03Ultra overlay。
 3. 从运行中的 Z03 导出完整 Qt 资源，设备端导出目录为 `/home/user/z03plus/qrc/`。
 4. 使用兼容的外部 QRC 覆盖：`qrc:/ZybQmlFiles/ZybSet/SetMainPage.qml`。
 5. 设置页新增“Z03Ultra 扩展”入口。
-6. Z03Ultra 首页包含文件管理、文本阅读、存储空间、音乐播放、录音、终端 Shell、应用商店（Nix）、网页浏览、关于设备、显示与灯光、ADB/SSH、AI 对话与息屏入口。
+6. Z03Ultra 首页采用 Material 风格卡片（含点击反馈与彩色强调条），提供文件管理、文本阅读、存储空间、音乐播放、录音、终端 Shell、应用商店（Nix）、网页浏览、关于设备、关于 Z03Ultra、显示与灯光、ADB/SSH、AI 对话入口；右上角可切换横屏/竖屏（仅影响 Ultra 页面及其子页面）。
+   - 文件管理：从 `/` 浏览整个文件系统，支持新建目录、复制、剪切/移动、重命名、删除、压缩（tar、tar.gz、tar.xz、zip）、解压与属性查看。
+   - 文本阅读/编辑：支持任意文本文件预览与编辑，保存使用 `QSaveFile` 原子写入，并自动识别 UTF-8 与 GB18030。
    - 存储空间：读取各挂载分区用量，显示文件系统与只读状态，并提供缓存清理。
    - 音乐播放：递归扫描 `/mnt/data` 与 `/home/user`，通过 `MediaPlayer` 播放并支持进度拖动。
    - 录音：按 `arecord` / `tinycap` / `gst-launch-1.0` 顺序选择后端，保存 16 kHz 单声道 WAV 到 `/home/user/z03plus/recordings`。
    - 终端 Shell：`/bin/sh -c` 执行命令，输出实时回显，支持停止与 60 秒超时。
-   - 应用商店：使用 Nix（单用户安装，通过清华 TUNA 镜像下载 Nix 2.9.2 armv7l 并添加 nixos-22.05 频道），支持搜索、按属性安装、查看已安装与更新频道。
-   - 网页浏览：基于 QtNetwork 的纯文本浏览器，支持地址栏、搜索、历史后退、链接跳转与常用站点快捷入口；页面限 1 MB、正文截断到 160 KB。
+   - 应用商店：使用 Nix（安装目录 `/home/nix`，启动时自动 bind mount 到 `/nix`；通过清华 TUNA/NJU 镜像下载 Nix 2.9.2 armv7l，复制 89 MB store 后手动执行 `nix-store --init/--load-db` 与 `nix-env -i`，并添加 nixos-22.05 频道；支持 HTTP 与跳过证书校验回退），支持搜索、按属性安装、查看已安装与更新频道。
+   - 网页浏览：基于系统自带 QtWebEngine 5.10（Chromium 61）的完整网页渲染，支持 JavaScript、CSS、图片与视频、点按链接、触摸滚动、前进后退、地址栏与搜索；使用移动版 User-Agent 适配窄屏，显示加载进度并在失败时提供重试。
    - 关于设备：展示设备型号、发行版、内核、ARM 架构、CPU 型号与特性、内存、运行时间、根分区与 Qt 版本。
+   - 关于 Z03Ultra：展示 Powered By OpenZybTeam 与 Based On PenPlus 项目地址，并可在内置浏览器打开。
    - “显示与灯光”会打开原厂 `SetLightPage.qml`。
 
 ## 设备环境
@@ -87,7 +107,7 @@ Z03Ultra 是基于 Z03Plus 扩展项目发展而来的分支，保留其 overlay
    /home/user/z03plus/z03plus.rcc
    ```
 
-5. 确认启动入口运行 `Z03Plus` 副本。
+5. 确认开机钩子把 `/home/user/z03plus/Z03Plus` bind mount 到 `/usr/bin/Z03`，守护脚本启动的即是带注入的副本。
 
 完整的依赖安装、moc 版本、部署、验证与回退步骤见 [docs/BUILD_DEPLOY_zh.md](docs/BUILD_DEPLOY_zh.md)。
 
@@ -97,31 +117,41 @@ Z03Ultra 是基于 Z03Plus 扩展项目发展而来的分支，保留其 overlay
 
 ## 回退
 
-将启动脚本恢复为：
+恢复原厂启动钩子并重启：
 
 ```sh
-/usr/bin/Z03 -platform wayland > /dev/null &
+mount -o remount,rw /
+cp -a /home/user/z03plus/zybz03qt-init.orig /etc/init.d/zybz03qt-init
+sync
+mount -o remount,ro /
+kill $(pidof Z03) 2>/dev/null
 ```
 
-然后重启 Z03 服务。
+重启后守护脚本恢复启动原厂 `/usr/bin/Z03`，bind mount 随重启自动消失。旧版本文件位于 `/home/user/z03plus/backup/`。
 
 ## 注意事项
 
-- 修改 QML 或 RCC 后，删除 `/home/.cache/Z03Plus/` 并重启 Z03Plus，QML 改动才会重新加载。
+- 修改 QML 或 RCC 后重启主界面即可。库在启动时设置 `QML_DISABLE_DISK_CACHE=1`，不再依赖手工清理 `/home/.cache/Z03Plus/`。
 - 原厂 `BasicButton` 默认 `checkable: true`。Z03Plus 功能入口必须显式设为 `checkable: false`，否则点击后会保持绿色选中状态。
 ## 真实设备适配记录与已踩坑
 
 本节记录 Z03Plus 实机适配过程中已经验证过的路径、失败原因与当前安全边界，避免后续重复走弯路。下列内容针对当前设备镜像；不同固件、不同二进制哈希或不同 Qt/GLIBC 版本均必须重新验证。
 
-### 1. 实际运行进程不是 `/usr/bin/Z03`
+### 1. 启动入口是 `/usr/bin/Z03`，副本通过 bind mount 接管
 
-早期分析曾把扫描逻辑归因到 `/usr/bin/Z03`。实机确认后，系统守护脚本实际循环启动的是：
+守护脚本 `/usr/bin/zyb_z03_launch.sh` 固定循环启动 `/usr/bin/Z03`。持久化注入不覆盖原文件，而是在 `/etc/init.d/zybz03qt-init` 拉起守护脚本之前执行：
 
 ```sh
-/home/user/z03plus/Z03Plus -platform wayland
+mount --bind /home/user/z03plus/Z03Plus /usr/bin/Z03
 ```
 
-扫描、OCR、翻译/搜题跳转等逻辑也在这个主 UI 副本内。不要仅根据旧项目路径或其他设备的 PenMods 代码判断目标进程；应先通过 `ps`、`/proc/<pid>/maps` 和启动脚本确认运行中的二进制。
+之后守护脚本每次重启，`/usr/bin/Z03` 实际解析到带 `DT_NEEDED` 的副本，扫描、OCR、翻译/搜题跳转逻辑也随副本一起加载。检查方法：
+
+```sh
+pidof Z03
+grep -c '/home/user/z03plus/libZ03Plus.so' /proc/$(pidof Z03)/maps
+cat /home/user/z03plus/boot-inject.log
+```
 
 ### 2. QML 修改必须重新生成并部署 RCC
 
@@ -148,16 +178,10 @@ rcc --binary --format-version 2 --no-compress z03plus.qrc -o z03plus.rcc
 
 ### 3. 不要替换原厂 `.so` 或直接修改系统程序
 
-设备的 `/usr/bin` 位于只读分区。实测无法修改、备份或覆盖：
-
-```text
-/usr/bin/zyb_z03_launch.sh
-```
-
-因此以下做法不可取或风险很高：
+设备的 `/usr/bin` 位于只读 rootfs。不改写 `/usr/bin/Z03` 与 `/usr/bin/zyb_z03_launch.sh`，只通过 bind mount 改变 `/usr/bin/Z03` 的挂载视图。以下做法仍然不可取：
 
 - 直接覆盖 `/usr/bin/Z03`、系统 Qt 库或 OCR `.so`；
-- 试图长期修改只读启动脚本加入 `LD_PRELOAD`；
+- 修改 `/usr/bin/zyb_z03_launch.sh` 或长期依赖 `LD_PRELOAD`；
 - 将其他设备的 PenMods 注入库直接放到本机运行。
 
 当前可写、可回退的部署位置应保持在：
@@ -220,9 +244,9 @@ ABI：r0=this，r1=bool finished，r2=const QString &text
 
 安全目标仍是“一次性 AI 扫描令牌”：只有用户在 AI 输入框主动点“扫”后、且令牌未超时时，才处理下一次完成结果；所有未授权扫描必须完整走原厂搜题/翻译流程。后续应优先在 OCR 完成后的翻译/搜题**路由调用点**实现条件分流，而不是替换 OCR 槽本体。
 
-### 7. 当前恢复状态
+### 7. 当前持久化状态
 
-最近一次观测测试已经完成并恢复：系统守护循环重新拉起普通 `Z03Plus` 实例，未加载探针；系统启动脚本没有修改。扫描输入的“令牌拦截 + 回填 AI 输入框”尚未部署，不应把它描述为已完成。
+持久化注入已落地：`/etc/init.d/zybz03qt-init` 在每次开机拉起守护脚本前执行 `/home/user/z03plus/z03ultra-boot.sh`，把副本 bind mount 到 `/usr/bin/Z03`。升级固件会覆盖该 init 脚本，OTA 后重新执行 `install.sh` 即可恢复。扫描输入的“令牌拦截 + 回填 AI 输入框”尚未部署，不应把它描述为已完成。
 
 
 

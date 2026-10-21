@@ -131,8 +131,8 @@ int Z03PlusSshService::qt_metacall(QMetaObject::Call _c, int _id, void **_a)
     return _id;
 }
 struct qt_meta_stringdata_Z03PlusFileService_t {
-    QByteArrayData data[12];
-    char stringdata0[105];
+    QByteArrayData data[23];
+    char stringdata0[206];
 };
 #define QT_MOC_LITERAL(idx, ofs, len) \
     Q_STATIC_BYTE_ARRAY_DATA_HEADER_INITIALIZER_WITH_OFFSET(len, \
@@ -151,13 +151,27 @@ QT_MOC_LITERAL(6, 59, 6), // "rename"
 QT_MOC_LITERAL(7, 66, 4), // "path"
 QT_MOC_LITERAL(8, 71, 7), // "newName"
 QT_MOC_LITERAL(9, 79, 6), // "remove"
-QT_MOC_LITERAL(10, 86, 10), // "parentPath"
-QT_MOC_LITERAL(11, 97, 7) // "canGoUp"
+QT_MOC_LITERAL(10, 86, 15), // "createDirectory"
+QT_MOC_LITERAL(11, 102, 9), // "parentDir"
+QT_MOC_LITERAL(12, 112, 4), // "name"
+QT_MOC_LITERAL(13, 117, 8), // "copyInto"
+QT_MOC_LITERAL(14, 126, 6), // "source"
+QT_MOC_LITERAL(15, 133, 9), // "targetDir"
+QT_MOC_LITERAL(16, 143, 8), // "moveInto"
+QT_MOC_LITERAL(17, 152, 8), // "compress"
+QT_MOC_LITERAL(18, 161, 5), // "paths"
+QT_MOC_LITERAL(19, 167, 11), // "archivePath"
+QT_MOC_LITERAL(20, 179, 7), // "extract"
+QT_MOC_LITERAL(21, 187, 10), // "parentPath"
+QT_MOC_LITERAL(22, 198, 7) // "canGoUp"
 
     },
     "Z03PlusFileService\0openDirectory\0\0"
     "requested\0order\0reversed\0rename\0path\0"
-    "newName\0remove\0parentPath\0canGoUp"
+    "newName\0remove\0createDirectory\0parentDir\0"
+    "name\0copyInto\0source\0targetDir\0moveInto\0"
+    "compress\0paths\0archivePath\0extract\0"
+    "parentPath\0canGoUp"
 };
 #undef QT_MOC_LITERAL
 
@@ -167,7 +181,7 @@ static const uint qt_meta_data_Z03PlusFileService[] = {
        7,       // revision
        0,       // classname
        0,    0, // classinfo
-       5,   14, // methods
+      10,   14, // methods
        0,    0, // properties
        0,    0, // enums/sets
        0,    0, // constructors
@@ -175,16 +189,26 @@ static const uint qt_meta_data_Z03PlusFileService[] = {
        0,       // signalCount
 
  // methods: name, argc, parameters, tag, flags
-       1,    3,   39,    2, 0x02 /* Public */,
-       6,    2,   46,    2, 0x02 /* Public */,
-       9,    1,   51,    2, 0x02 /* Public */,
-      10,    1,   54,    2, 0x02 /* Public */,
-      11,    1,   57,    2, 0x02 /* Public */,
+       1,    3,   64,    2, 0x02 /* Public */,
+       6,    2,   71,    2, 0x02 /* Public */,
+       9,    1,   76,    2, 0x02 /* Public */,
+      10,    2,   79,    2, 0x02 /* Public */,
+      13,    2,   84,    2, 0x02 /* Public */,
+      16,    2,   89,    2, 0x02 /* Public */,
+      17,    2,   94,    2, 0x02 /* Public */,
+      20,    2,   99,    2, 0x02 /* Public */,
+      21,    1,  104,    2, 0x02 /* Public */,
+      22,    1,  107,    2, 0x02 /* Public */,
 
  // methods: parameters
     QMetaType::QVariantMap, QMetaType::QString, QMetaType::Int, QMetaType::Bool,    3,    4,    5,
     QMetaType::Bool, QMetaType::QString, QMetaType::QString,    7,    8,
     QMetaType::Bool, QMetaType::QString,    7,
+    QMetaType::QVariantMap, QMetaType::QString, QMetaType::QString,   11,   12,
+    QMetaType::QVariantMap, QMetaType::QString, QMetaType::QString,   14,   15,
+    QMetaType::QVariantMap, QMetaType::QString, QMetaType::QString,   14,   15,
+    QMetaType::QVariantMap, QMetaType::QStringList, QMetaType::QString,   18,   19,
+    QMetaType::QVariantMap, QMetaType::QString, QMetaType::QString,   19,   15,
     QMetaType::QString, QMetaType::QString,    7,
     QMetaType::Bool, QMetaType::QString,    7,
 
@@ -203,9 +227,19 @@ void Z03PlusFileService::qt_static_metacall(QObject *_o, QMetaObject::Call _c, i
             if (_a[0]) *reinterpret_cast< bool*>(_a[0]) = std::move(_r); }  break;
         case 2: { bool _r = _t->remove((*reinterpret_cast< const QString(*)>(_a[1])));
             if (_a[0]) *reinterpret_cast< bool*>(_a[0]) = std::move(_r); }  break;
-        case 3: { QString _r = _t->parentPath((*reinterpret_cast< const QString(*)>(_a[1])));
+        case 3: { QVariantMap _r = _t->createDirectory((*reinterpret_cast< const QString(*)>(_a[1])),(*reinterpret_cast< const QString(*)>(_a[2])));
+            if (_a[0]) *reinterpret_cast< QVariantMap*>(_a[0]) = std::move(_r); }  break;
+        case 4: { QVariantMap _r = _t->copyInto((*reinterpret_cast< const QString(*)>(_a[1])),(*reinterpret_cast< const QString(*)>(_a[2])));
+            if (_a[0]) *reinterpret_cast< QVariantMap*>(_a[0]) = std::move(_r); }  break;
+        case 5: { QVariantMap _r = _t->moveInto((*reinterpret_cast< const QString(*)>(_a[1])),(*reinterpret_cast< const QString(*)>(_a[2])));
+            if (_a[0]) *reinterpret_cast< QVariantMap*>(_a[0]) = std::move(_r); }  break;
+        case 6: { QVariantMap _r = _t->compress((*reinterpret_cast< const QStringList(*)>(_a[1])),(*reinterpret_cast< const QString(*)>(_a[2])));
+            if (_a[0]) *reinterpret_cast< QVariantMap*>(_a[0]) = std::move(_r); }  break;
+        case 7: { QVariantMap _r = _t->extract((*reinterpret_cast< const QString(*)>(_a[1])),(*reinterpret_cast< const QString(*)>(_a[2])));
+            if (_a[0]) *reinterpret_cast< QVariantMap*>(_a[0]) = std::move(_r); }  break;
+        case 8: { QString _r = _t->parentPath((*reinterpret_cast< const QString(*)>(_a[1])));
             if (_a[0]) *reinterpret_cast< QString*>(_a[0]) = std::move(_r); }  break;
-        case 4: { bool _r = _t->canGoUp((*reinterpret_cast< const QString(*)>(_a[1])));
+        case 9: { bool _r = _t->canGoUp((*reinterpret_cast< const QString(*)>(_a[1])));
             if (_a[0]) *reinterpret_cast< bool*>(_a[0]) = std::move(_r); }  break;
         default: ;
         }
@@ -237,19 +271,19 @@ int Z03PlusFileService::qt_metacall(QMetaObject::Call _c, int _id, void **_a)
     if (_id < 0)
         return _id;
     if (_c == QMetaObject::InvokeMetaMethod) {
-        if (_id < 5)
+        if (_id < 10)
             qt_static_metacall(this, _c, _id, _a);
-        _id -= 5;
+        _id -= 10;
     } else if (_c == QMetaObject::RegisterMethodArgumentMetaType) {
-        if (_id < 5)
+        if (_id < 10)
             *reinterpret_cast<int*>(_a[0]) = -1;
-        _id -= 5;
+        _id -= 10;
     }
     return _id;
 }
 struct qt_meta_stringdata_Z03PlusTextFileService_t {
-    QByteArrayData data[5];
-    char stringdata0[47];
+    QByteArrayData data[7];
+    char stringdata0[64];
 };
 #define QT_MOC_LITERAL(idx, ofs, len) \
     Q_STATIC_BYTE_ARRAY_DATA_HEADER_INITIALIZER_WITH_OFFSET(len, \
@@ -262,11 +296,13 @@ QT_MOC_LITERAL(0, 0, 22), // "Z03PlusTextFileService"
 QT_MOC_LITERAL(1, 23, 8), // "readText"
 QT_MOC_LITERAL(2, 32, 0), // ""
 QT_MOC_LITERAL(3, 33, 4), // "path"
-QT_MOC_LITERAL(4, 38, 8) // "fileName"
+QT_MOC_LITERAL(4, 38, 8), // "saveText"
+QT_MOC_LITERAL(5, 47, 7), // "content"
+QT_MOC_LITERAL(6, 55, 8) // "fileName"
 
     },
     "Z03PlusTextFileService\0readText\0\0path\0"
-    "fileName"
+    "saveText\0content\0fileName"
 };
 #undef QT_MOC_LITERAL
 
@@ -276,7 +312,7 @@ static const uint qt_meta_data_Z03PlusTextFileService[] = {
        7,       // revision
        0,       // classname
        0,    0, // classinfo
-       2,   14, // methods
+       3,   14, // methods
        0,    0, // properties
        0,    0, // enums/sets
        0,    0, // constructors
@@ -284,11 +320,13 @@ static const uint qt_meta_data_Z03PlusTextFileService[] = {
        0,       // signalCount
 
  // methods: name, argc, parameters, tag, flags
-       1,    1,   24,    2, 0x02 /* Public */,
-       4,    1,   27,    2, 0x02 /* Public */,
+       1,    1,   29,    2, 0x02 /* Public */,
+       4,    2,   32,    2, 0x02 /* Public */,
+       6,    1,   37,    2, 0x02 /* Public */,
 
  // methods: parameters
     QMetaType::QVariantMap, QMetaType::QString,    3,
+    QMetaType::QVariantMap, QMetaType::QString, QMetaType::QString,    3,    5,
     QMetaType::QString, QMetaType::QString,    3,
 
        0        // eod
@@ -302,7 +340,9 @@ void Z03PlusTextFileService::qt_static_metacall(QObject *_o, QMetaObject::Call _
         switch (_id) {
         case 0: { QVariantMap _r = _t->readText((*reinterpret_cast< const QString(*)>(_a[1])));
             if (_a[0]) *reinterpret_cast< QVariantMap*>(_a[0]) = std::move(_r); }  break;
-        case 1: { QString _r = _t->fileName((*reinterpret_cast< const QString(*)>(_a[1])));
+        case 1: { QVariantMap _r = _t->saveText((*reinterpret_cast< const QString(*)>(_a[1])),(*reinterpret_cast< const QString(*)>(_a[2])));
+            if (_a[0]) *reinterpret_cast< QVariantMap*>(_a[0]) = std::move(_r); }  break;
+        case 2: { QString _r = _t->fileName((*reinterpret_cast< const QString(*)>(_a[1])));
             if (_a[0]) *reinterpret_cast< QString*>(_a[0]) = std::move(_r); }  break;
         default: ;
         }
@@ -334,13 +374,13 @@ int Z03PlusTextFileService::qt_metacall(QMetaObject::Call _c, int _id, void **_a
     if (_id < 0)
         return _id;
     if (_c == QMetaObject::InvokeMetaMethod) {
-        if (_id < 2)
+        if (_id < 3)
             qt_static_metacall(this, _c, _id, _a);
-        _id -= 2;
+        _id -= 3;
     } else if (_c == QMetaObject::RegisterMethodArgumentMetaType) {
-        if (_id < 2)
+        if (_id < 3)
             *reinterpret_cast<int*>(_a[0]) = -1;
-        _id -= 2;
+        _id -= 3;
     }
     return _id;
 }

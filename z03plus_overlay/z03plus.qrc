@@ -5,6 +5,7 @@
   <qresource prefix="/ZybQmlFiles/ZybSet">
     <file alias="SetMainPage.qml">SetMainPage.qml</file>
     <file alias="Z03UltraPage.qml">Z03UltraPage.qml</file>
+    <file alias="MaterialTile.qml">MaterialTile.qml</file>
     <file alias="ScreenTimeoutPage.qml">ScreenTimeoutPage.qml</file>
     <file alias="StoragePage.qml">StoragePage.qml</file>
     <file alias="MusicPage.qml">MusicPage.qml</file>
@@ -13,6 +14,7 @@
     <file alias="NixStorePage.qml">NixStorePage.qml</file>
     <file alias="DeviceInfoPage.qml">DeviceInfoPage.qml</file>
     <file alias="BrowserPage.qml">BrowserPage.qml</file>
+    <file alias="AboutPage.qml">AboutPage.qml</file>
     <!-- File manager and text reader are embedded in Z03UltraPage.qml. -->
   </qresource>
 </RCC>

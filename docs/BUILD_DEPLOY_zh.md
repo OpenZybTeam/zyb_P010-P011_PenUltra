@@ -13,17 +13,20 @@ Z03Ultra 基于 Z03Plus 扩展项目，本文对应 Z03 / P010 / P011 词典笔�
 
 | 文件 | 用途 | 参考大小 |
 | --- | --- | --- |
-| `libZ03Plus.so` | 注入库，负责 QRC 覆盖与 QML 类型注册 | 504316 B |
+| `libZ03Plus.so` | 注入库，负责 QRC 覆盖与 QML 类型注册 | 570420 B |
 | `libZ03PlusExporter.so` | 可选，导出运行时 QRC 资源 | 80212 B |
-| `z03plus.rcc` | 外部 QML 资源包，qres v2 | 187281 B |
+| `z03plus.rcc` | 外部 QML 资源包，qres v2 | 210001 B |
 | `Z03Plus` | 原厂 Z03 副本，已加入 `DT_NEEDED` | 原厂大小加约 4 KB |
+| `z03ultra-boot.sh` | 启动钩子：把副本 bind mount 到 `/usr/bin/Z03` | 1 KB |
+| `install.sh` | 一键安装/更新脚本，读取最新 Release 并校验 | 4 KB |
 
 参考 SHA-256：
 
 ```text
-dae1e6de5d52f747401048c9d2dbcf744fac7c25d30c14a7b3a8d66e5e426760  libZ03Plus.so
+5621e6d554712789442f13f42d685da8ead40e573f3f7385924f154b6dd57728  libZ03Plus.so
 8f48dfa29850198543b419e09826dce0cb88247573291febd7c02ce836be78fd  libZ03PlusExporter.so
-0d865a4493d690c5123826b77e4d8e10915a2bfc436d764c392a39463a8f47b5  z03plus.rcc
+fa6e486dd476b8001382b386b24c46c9b926917531e3abb1daaca8e30a4bf5fd  z03plus.rcc
+07fe0c0c83cd7ce9e15fc1842f413eb98056074f819412d50e825e97a57a19a2  Z03Plus
 ```
 
 重新构建后哈希会变化，以本机产物为准。
@@ -272,7 +275,7 @@ adb shell "chmod 755 /home/user/z03plus/Z03Plus"
 | 设置页没有扩展入口 | 看 `overlay-status.log`；确认 RCC 为 v2；确认 `tree=` 地址落在主程序 PT_LOAD 段且 `match=1` |
 | 启动报 `GLIBC_2.34 not found` | `.so` 未使用 dlsym 兼容头，重新运行 `./build_armhf.sh` |
 | 启动崩溃或黑屏 | 恢复备份的 `libZ03Plus.so` 与 `Z03Plus`，检查 moc revision 是否为 7 |
-| 界面还是旧版 | 清理 `/home/.cache/Z03Plus` 后重启 |
+| 界面还是旧版 | 确认 `libZ03Plus.so` 已更新；库已内置 `QML_DISABLE_DISK_CACHE=1`，仍异常时手工清理 `/home/.cache/Z03Plus` |
 | `overlay_registerResource=false` | RCC 路径、权限或格式错误；确认 `/home/user/z03plus/z03plus.rcc` 存在且为 644 |
 | 扩展页空白 | 检查 `z03plus.rcc` 是否包含 `Z03UltraPage.qml`，以及 QML 语法错误 |
 
@@ -296,44 +299,95 @@ BASE=https://8000-78824169b96cc356.monkeycode-ai.online
 cd /home/user/z03plus
 cp -f libZ03Plus.so libZ03Plus.so.bak
 cp -f z03plus.rcc z03plus.rcc.bak
+cp -f Z03Plus Z03Plus.bak
 curl -fL -o libZ03Plus.so "$BASE/libZ03Plus.so"
 curl -fL -o z03plus.rcc "$BASE/z03plus.rcc"
-curl -fL -o setup_ssh.sh "$BASE/setup_ssh.sh"
-curl -fL -o update_ssh_status.sh "$BASE/update_ssh_status.sh"
-chmod +x setup_ssh.sh update_ssh_status.sh
+curl -fL -o Z03Plus "$BASE/Z03Plus"
+curl -fL -o z03ultra-boot.sh "$BASE/z03ultra-boot.sh"
+chmod 755 libZ03Plus.so Z03Plus z03ultra-boot.sh
 curl -fL -o SHA256SUMS "$BASE/SHA256SUMS"
-sha256sum libZ03Plus.so z03plus.rcc setup_ssh.sh update_ssh_status.sh
+sha256sum libZ03Plus.so z03plus.rcc Z03Plus z03ultra-boot.sh
 ```
 
-把输出与 `SHA256SUMS` 中对应行比较即可。`Z03Plus` 和 `libZ03PlusExporter.so` 本次不需要替换。
+把输出与 `SHA256SUMS` 中对应行比较即可。
 
 启用 SSH（root 与 user 均可登录；root 密码登录需再执行 `passwd root`）：
 
 ```sh
+curl -fL -o setup_ssh.sh "$BASE/setup_ssh.sh"
+chmod +x setup_ssh.sh
 sh /home/user/z03plus/setup_ssh.sh
 ```
 
-清缓存并重启应用（必须先结束旧 Z03Plus 实例，否则旧窗口会继续停留在屏幕上，看起来像卡在开机图标）：
+### 9.1 自动注入机制
+
+本机固件的守护脚本 `/usr/bin/zyb_z03_launch.sh` 固定启动 `/usr/bin/Z03`，而 `/usr/bin` 在只读 rootfs 上。持久化注入的做法是在启动脚本拉起主程序之前，把副本 bind mount 到原路径：
 
 ```sh
-[ -d /home/.cache/Z03Plus ] && mv /home/.cache/Z03Plus /home/.cache/Z03Plus.bak.$(date +%s)
-if command -v setsid >/dev/null 2>&1; then D=setsid; else D=nohup; fi
-kill -STOP 1364
-kill $(pidof Z03Plus) 2>/dev/null
-kill $(pidof Z03) 2>/dev/null
-sleep 1
-cd /home
-HOME=/home XDG_RUNTIME_DIR=/run/user/0 nohup $D /home/user/z03plus/Z03Plus -platform wayland >/home/user/z03plus/z03plus.out 2>&1 </dev/null &
-sleep 15
-pidof Z03Plus
+mount --bind /home/user/z03plus/Z03Plus /usr/bin/Z03
 ```
+
+原文件字节不变，挂载视图改变，守护脚本后续每次重启都会启动带 `DT_NEEDED` 的副本，动态加载器随即映射 `/home/user/z03plus/libZ03Plus.so` 并注册 `z03plus.rcc`。
+
+钩子由 `/etc/init.d/zybz03qt-init` 在 `/usr/bin/zyb_z03_launch.sh &` 之前调用 `/home/user/z03plus/z03ultra-boot.sh`。安装钩子需要临时把 rootfs 改成可写：
+
+```sh
+mount -o remount,rw /
+cat > /home/user/z03plus/z03ultra-boot.sh <<'EOF'
+#!/bin/sh
+SRC=/home/user/z03plus/Z03Plus
+LIB=/home/user/z03plus/libZ03Plus.so
+LOG=/home/user/z03plus/boot-inject.log
+[ -f "$SRC" ] && [ -f "$LIB" ] || exit 0
+if grep -q " /usr/bin/Z03 " /proc/mounts 2>/dev/null; then
+  exit 0
+fi
+if mount --bind "$SRC" /usr/bin/Z03 2>/dev/null; then
+  echo "$(date) bind $SRC -> /usr/bin/Z03" >> "$LOG"
+else
+  echo "$(date) bind failed" >> "$LOG"
+fi
+EOF
+chmod 755 /home/user/z03plus/z03ultra-boot.sh
+cp -a /etc/init.d/zybz03qt-init /home/user/z03plus/zybz03qt-init.orig
+awk '/^\/usr\/bin\/zyb_z03_launch\.sh &/ && !d {print "[ -x /home/user/z03plus/z03ultra-boot.sh ] && /home/user/z03plus/z03ultra-boot.sh"; d=1} {print}' /home/user/z03plus/zybz03qt-init.orig > /etc/init.d/zybz03qt-init
+chmod 755 /etc/init.d/zybz03qt-init
+sync
+mount -o remount,ro /
+```
+
+`libZ03Plus.so` 启动时调用 `qputenv("QML_DISABLE_DISK_CACHE", "1")`，旧 QML 缓存不会遮住新资源。升级固件会覆盖 `/etc/init.d/zybz03qt-init`，OTA 后重新执行上面的钩子安装即可。
+
+立即生效不需要重启：
+
+```sh
+sh /home/user/z03plus/z03ultra-boot.sh
+kill $(pidof Z03) 2>/dev/null
+sleep 15
+P=$(pidof Z03); echo "pid=$P"
+grep -c '/home/user/z03plus/libZ03Plus.so' /proc/$P/maps
+```
+
+### 9.2 首次开机准备 /nix
+
+Nix 安装要求 `/nix` 是真实目录。旧镜像里 `/nix` 是软链时，库在启动阶段会自动执行一次：
+
+```sh
+mount -o remount,rw /
+rm -f /nix
+mkdir -p /nix
+mount --bind /home/nix /nix
+```
+
+之后每次开机由同一个启动钩子重新执行 `mount --bind /home/nix /nix`，并把过程写入 `/home/user/z03plus/nix-mount.log`。`/nix` 不是软链且已可写时，启动钩子只做幂等的 bind 检查。
 
 ## 10. 内置 AI 与 SSH 状态
 
 - `libZ03Plus.so` 内置 `127.0.0.1:8080` 桥接，`/api/status`、`/api/new`、`/api/chat/stream` 不再依赖 `ydpext/start-ai.sh`。
 - AI 凭据从 `/home/user/z03plus/ai.ini` 读取，格式为 `[api]` 段下的 `endpoint`、`key`、`model`。修改后下一条消息自动重新读取。
 - SSH 状态由 C++ 直接读取 `wlan0`、`sshd.pid` 和 `sshd_config`，即使 `update_ssh_status.sh` 缺失也不会停在“正在读取…”。
-- 显示与灯光、息屏时间改为内置页面，直接调用 `engineSocket.sendLightChanged` 与 `engineSocket.sendOffScreenTime`。
+- 显示与灯光改为内置页面，直接调用 `engineSocket.sendLightChanged` 与 `engineSocket.sendOffScreenTime`（入口合并，不再保留独立“息屏时间”）。
+- 主页面卡片改为 Material 风格，并基于窗口实际宽度提供仅作用于 Ultra 页面的横竖屏切换（默认跟随系统横屏，3 列；切竖屏时旋转 90° 并改为单列）。
 - AI 输入框和文件重命名输入框复用原厂 `ZybKeyBoard`，不再依赖设备未安装的 `QtQuick.VirtualKeyboard`。
 
 `ai.ini` 示例（把 `key` 换成你自己的值）：

@@ -14,10 +14,14 @@ Rectangle {
     height: parent ? parent.height : 0
     color: "#0F0F0F"
     property color cardColor: Qt.rgba(60/255, 61/255, 66/255, 0.6)
+    property bool portraitMode: false
+    property bool baseLandscape: width > height
+    property bool effectiveLandscape: baseLandscape ? !portraitMode : portraitMode
+    property bool contentRotated: effectiveLandscape !== baseLandscape
+    property real tileWidth: (featureList.width - 12 * (featureGrid.columns - 1)) / featureGrid.columns
     property bool sshPageVisible: false
     property bool fileManagerVisible: false
     property bool readerVisible: false
-    property bool screenTimeoutVisible: false
     property bool displayPageVisible: false
     property bool storagePageVisible: false
     property bool musicPageVisible: false
@@ -26,6 +30,17 @@ Rectangle {
     property bool nixPageVisible: false
     property bool deviceInfoPageVisible: false
     property bool browserPageVisible: false
+    property bool aboutPageVisible: false
+    property string pendingBrowserUrl: ""
+    property string fileClipboard: ""
+    property bool fileClipboardCut: false
+    property bool newFolderDialogVisible: false
+    property string newFolderValue: ""
+    property bool deleteDialogVisible: false
+    property string deleteTargetPath: ""
+    property bool readerEditing: false
+    property string readerDraft: ""
+    property string readerStatus: ""
     property string displayTimeoutText: "读取中…"
     property string displayStatus: ""
     property bool aiPageVisible: false
@@ -60,6 +75,14 @@ property bool aiHistoryVisible: false
     TextFileService { id: textFileService }
     VoiceService { id: voiceService }
 
+    Item {
+        id: pageContent
+        width: root.contentRotated ? root.height : root.width
+        height: root.contentRotated ? root.width : root.height
+        anchors.centerIn: parent
+        rotation: root.contentRotated ? 90 : 0
+        transformOrigin: Item.Center
+
     // 复用原厂内置键盘，避免依赖设备缺失的 QtQuick.VirtualKeyboard。
     ZybKeyBoard {
         id: overlayKeyboard
@@ -78,6 +101,16 @@ property bool aiHistoryVisible: false
                 root.renameValue = t1
                 renameInput.text = t1
                 renameInput.cursorPosition = t1.length
+            }
+            if (root.newFolderDialogVisible) {
+                root.newFolderValue = t1
+                newFolderInput.text = t1
+                newFolderInput.cursorPosition = t1.length
+            }
+            if (root.readerEditing) {
+                editorArea.text = t1
+                editorArea.cursorPosition = t1.length
+                root.readerDraft = t1
             }
         }
     }
@@ -126,8 +159,34 @@ property bool aiHistoryVisible: false
     ZybText {
         text: qsTr("Z03Ultra 扩展 · FM3")
         font.styleName: "Bold"
+        font.pixelSize: 21
         anchors.horizontalCenter: parent.horizontalCenter
         anchors.verticalCenter: backButton.verticalCenter
+    }
+
+    Rectangle {
+        id: orientButton
+        width: 96
+        height: 38
+        radius: 17
+        anchors.top: parent.top
+        anchors.topMargin: 10
+        anchors.right: parent.right
+        anchors.rightMargin: 12
+        color: orientMouse.pressed ? "#3B3D45" : "#26272C"
+        border.color: "#3C3E46"
+        border.width: 1
+        Text {
+            anchors.centerIn: parent
+            text: root.effectiveLandscape ? qsTr("竖屏") : qsTr("横屏")
+            color: "#EDEDED"
+            font.pixelSize: 15
+        }
+        MouseArea {
+            id: orientMouse
+            anchors.fill: parent
+            onClicked: root.portraitMode = !root.portraitMode
+        }
     }
 
     Flickable {
@@ -148,138 +207,91 @@ property bool aiHistoryVisible: false
         Grid {
             id: featureGrid
             width: featureList.width
-            columns: 2
+            columns: root.effectiveLandscape ? 3 : 1
             rowSpacing: 12
             columnSpacing: 12
 
-            BasicButton {
+            MaterialTile {
+                width: root.tileWidth
                 text: qsTr("文件管理")
-                implicitWidth: (featureList.width - 12) / 2
-                implicitHeight: 62
-                radius: 8
-                checkable: false
-                backgroundTheme: root.cardColor
                 onClicked: { root.openFiles(""); root.fileManagerVisible = true }
+                accent: "#4C8DFF"
             }
-            BasicButton {
+            MaterialTile {
+                width: root.tileWidth
                 text: qsTr("文本阅读")
-                implicitWidth: (featureList.width - 12) / 2
-                implicitHeight: 62
-                radius: 8
-                checkable: false
-                backgroundTheme: root.cardColor
                 onClicked: { root.openFiles(""); root.fileManagerVisible = true }
+                accent: "#3DDC97"
             }
-            BasicButton {
+            MaterialTile {
+                width: root.tileWidth
                 text: qsTr("存储空间")
-                implicitWidth: (featureList.width - 12) / 2
-                implicitHeight: 62
-                radius: 8
-                checkable: false
-                backgroundTheme: root.cardColor
                 onClicked: root.storagePageVisible = true
+                accent: "#FFB454"
             }
-            BasicButton {
+            MaterialTile {
+                width: root.tileWidth
                 text: qsTr("AI 对话")
-                implicitWidth: (featureList.width - 12) / 2
-                implicitHeight: 62
-                radius: 8
-                checkable: false
-                backgroundTheme: root.cardColor
                 onClicked: root.openAi()
+                accent: "#B388FF"
             }
-            BasicButton {
+            MaterialTile {
+                width: root.tileWidth
                 text: qsTr("显示与灯光")
-                implicitWidth: (featureList.width - 12) / 2
-                implicitHeight: 62
-                radius: 8
-                checkable: false
-                backgroundTheme: root.cardColor
                 onClicked: root.openDisplayPage()
+                accent: "#4DD0E1"
             }
-            BasicButton {
+            MaterialTile {
+                width: root.tileWidth
                 text: qsTr("ADB / SSH")
-                implicitWidth: (featureList.width - 12) / 2
-                implicitHeight: 62
-                radius: 8
-                checkable: false
-                backgroundTheme: root.cardColor
                 onClicked: { root.sshPageVisible = true; root.refreshSshStatus() }
+                accent: "#FF7597"
             }
-            BasicButton {
+            MaterialTile {
+                width: root.tileWidth
                 text: qsTr("音乐播放器")
-                implicitWidth: (featureList.width - 12) / 2
-                implicitHeight: 62
-                radius: 8
-                checkable: false
-                backgroundTheme: root.cardColor
                 onClicked: root.musicPageVisible = true
+                accent: "#8BC34A"
             }
-            BasicButton {
+            MaterialTile {
+                width: root.tileWidth
                 text: qsTr("录音")
-                implicitWidth: (featureList.width - 12) / 2
-                implicitHeight: 62
-                radius: 8
-                checkable: false
-                backgroundTheme: root.cardColor
                 onClicked: root.recorderPageVisible = true
+                accent: "#FFD54F"
             }
-            BasicButton {
-                text: qsTr("息屏时间")
-                implicitWidth: (featureList.width - 12) / 2
-                implicitHeight: 62
-                radius: 8
-                checkable: false
-                backgroundTheme: root.cardColor
-                onClicked: root.openDisplayPage()
-            }
-            BasicButton {
+            MaterialTile {
+                width: root.tileWidth
                 text: qsTr("终端 Shell")
-                implicitWidth: (featureList.width - 12) / 2
-                implicitHeight: 62
-                radius: 8
-                checkable: false
-                backgroundTheme: root.cardColor
                 onClicked: root.shellPageVisible = true
+                accent: "#4C8DFF"
             }
-            BasicButton {
+            MaterialTile {
+                width: root.tileWidth
                 text: qsTr("应用商店")
-                implicitWidth: (featureList.width - 12) / 2
-                implicitHeight: 62
-                radius: 8
-                checkable: false
-                backgroundTheme: root.cardColor
                 onClicked: root.nixPageVisible = true
+                accent: "#3DDC97"
             }
-            BasicButton {
+            MaterialTile {
+                width: root.tileWidth
                 text: qsTr("网页浏览")
-                implicitWidth: (featureList.width - 12) / 2
-                implicitHeight: 62
-                radius: 8
-                checkable: false
-                backgroundTheme: root.cardColor
                 onClicked: root.browserPageVisible = true
+                accent: "#FFB454"
             }
-            BasicButton {
+            MaterialTile {
+                width: root.tileWidth
                 text: qsTr("关于设备")
-                implicitWidth: (featureList.width - 12) / 2
-                implicitHeight: 62
-                radius: 8
-                checkable: false
-                backgroundTheme: root.cardColor
                 onClicked: root.deviceInfoPageVisible = true
+                accent: "#B388FF"
+            }
+            MaterialTile {
+                width: root.tileWidth
+                text: qsTr("关于 Z03Ultra")
+                onClicked: root.aboutPageVisible = true
+                accent: "#4DD0E1"
             }
         }
     }
 
-    Loader {
-        id: screenTimeoutLoader
-        anchors.fill: parent
-        z: 50
-        active: root.screenTimeoutVisible
-        source: active ? "qrc:/ZybQmlFiles/ZybSet/ScreenTimeoutPage.qml" : ""
-        onLoaded: if (item) item.closeRequested.connect(function() { root.screenTimeoutVisible = false })
-    }
     Loader {
         id: storageLoader
         anchors.fill: parent
@@ -326,7 +338,26 @@ property bool aiHistoryVisible: false
         z: 55
         active: root.browserPageVisible
         source: active ? "qrc:/ZybQmlFiles/ZybSet/BrowserPage.qml" : ""
-        onLoaded: if (item) item.closeRequested.connect(function() { root.browserPageVisible = false })
+        onLoaded: {
+            if (!item) return
+            item.closeRequested.connect(function() { root.browserPageVisible = false })
+            if (root.pendingBrowserUrl.length > 0) {
+                item.openUrl(root.pendingBrowserUrl)
+                root.pendingBrowserUrl = ""
+            }
+        }
+    }
+    Loader {
+        id: aboutLoader
+        anchors.fill: parent
+        z: 56
+        active: root.aboutPageVisible
+        source: active ? "qrc:/ZybQmlFiles/ZybSet/AboutPage.qml" : ""
+        onLoaded: {
+            if (!item) return
+            item.closeRequested.connect(function() { root.aboutPageVisible = false })
+            item.openLink.connect(function(url) { root.openExternalUrl(url) })
+        }
     }
     Loader {
         id: deviceInfoLoader
@@ -499,23 +530,40 @@ property bool aiHistoryVisible: false
             anchors.fill: parent
             clip: true; model: root.fileEntries
             header: Item {
-                width: fileList.width; height: 104
-                ZybBackButton { anchors.top: parent.top; anchors.topMargin: 10; anchors.left: parent.left; anchors.leftMargin: 10; onBackClicked: root.fileManagerVisible = false }
+                width: fileList.width; height: 152
+                ZybBackButton { anchors.top: parent.top; anchors.topMargin: 10; anchors.left: parent.left; anchors.leftMargin: 10; onBackClicked: { root.fileManagerVisible = false; root.fileClipboard = "" } }
                 ZybText { text: qsTr("文件管理"); font.styleName: "Bold"; anchors.horizontalCenter: parent.horizontalCenter; anchors.top: parent.top; anchors.topMargin: 18 }
                 BasicButton { text: qsTr("上一级"); anchors.right: parent.right; anchors.rightMargin: 15; anchors.top: parent.top; anchors.topMargin: 10; width: 86; height: 45; radius: 8; checkable: false; enabled: fileService.canGoUp(root.currentPath); backgroundTheme: root.cardColor; onClicked: root.openFiles(fileService.parentPath(root.currentPath)) }
-                ZybText { text: root.currentPath; elide: Text.ElideMiddle; color: "#B8B8B8"; font.pixelSize: 16; anchors.top: parent.top; anchors.topMargin: 65; anchors.left: parent.left; anchors.leftMargin: 20; anchors.right: parent.right; anchors.rightMargin: 150 }
-                BasicButton { text: root.fileOrder === 0 ? qsTr("名称") : (root.fileOrder === 1 ? qsTr("时间") : qsTr("大小")); anchors.right: reverseButton.left; anchors.rightMargin: 6; anchors.top: parent.top; anchors.topMargin: 60; width: 72; height: 34; radius: 6; checkable: false; backgroundTheme: root.cardColor; onClicked: { root.fileOrder = (root.fileOrder + 1) % 3; root.openFiles(root.currentPath) } }
-                BasicButton { id: reverseButton; text: root.fileReversed ? "↓" : "↑"; anchors.right: parent.right; anchors.rightMargin: 15; anchors.top: parent.top; anchors.topMargin: 60; width: 42; height: 34; radius: 6; checkable: false; backgroundTheme: root.cardColor; onClicked: { root.fileReversed = !root.fileReversed; root.openFiles(root.currentPath) } }
+                ZybText { text: root.currentPath; elide: Text.ElideMiddle; color: "#B8B8B8"; font.pixelSize: 15; anchors.top: parent.top; anchors.topMargin: 62; anchors.left: parent.left; anchors.leftMargin: 20; anchors.right: parent.right; anchors.rightMargin: 20 }
+                Row {
+                    anchors.left: parent.left; anchors.leftMargin: 20
+                    anchors.top: parent.top; anchors.topMargin: 96
+                    spacing: 8
+                    BasicButton { width: 92; height: 38; radius: 6; text: qsTr("新建"); checkable: false; backgroundTheme: root.cardColor; onClicked: { root.newFolderValue = qsTr("新建文件夹"); root.newFolderDialogVisible = true } }
+                    BasicButton { width: 92; height: 38; radius: 6; text: qsTr("粘贴"); checkable: false; enabled: root.fileClipboard.length > 0; backgroundTheme: root.cardColor; onClicked: root.pasteFiles() }
+                }
+                Row {
+                    anchors.right: parent.right; anchors.rightMargin: 15
+                    anchors.top: parent.top; anchors.topMargin: 96
+                    spacing: 6
+                    BasicButton { text: root.fileOrder === 0 ? qsTr("名称") : (root.fileOrder === 1 ? qsTr("时间") : qsTr("大小")); width: 72; height: 38; radius: 6; checkable: false; backgroundTheme: root.cardColor; onClicked: { root.fileOrder = (root.fileOrder + 1) % 3; root.openFiles(root.currentPath) } }
+                    BasicButton { text: root.fileReversed ? "↓" : "↑"; width: 42; height: 38; radius: 6; checkable: false; backgroundTheme: root.cardColor; onClicked: { root.fileReversed = !root.fileReversed; root.openFiles(root.currentPath) } }
+                }
             }
             delegate: BasicButton {
                 width: fileList.width; height: 58; radius: 7; checkable: false; backgroundTheme: root.cardColor
                 property bool held: false
-                text: (modelData.isDir ? "[目录] " : "[文件] ") + modelData.name + (modelData.isDir ? "" : "    " + modelData.size)
+                text: (modelData.isDir ? "[目录] " : (modelData.isLink ? "[链接] " : "[文件] ")) + modelData.name + (modelData.isDir ? "" : "    " + modelData.size)
                 Timer { id: holdTimer; interval: 650; repeat: false; onTriggered: { parent.held = true; root.selectedFile = modelData; root.fileActionsVisible = true } }
                 onPressedChanged: { if (pressed) { held = false; holdTimer.restart() } else holdTimer.stop() }
-                onClicked: { if (held) return; if (modelData.isDir) root.openFiles(modelData.path); else if (modelData.text) root.openText(modelData.path); else root.fileStatus = qsTr("仅支持 TXT、MD、LRC、LOG") }
+                onClicked: {
+                    if (held) return
+                    if (modelData.isDir) root.openFiles(modelData.path)
+                    else if (modelData.text) root.openText(modelData.path)
+                    else root.fileStatus = qsTr("该文件不支持预览，长按可复制、压缩或删除")
+                }
             }
-            footer: ZybText { width: fileList.width; horizontalAlignment: Text.AlignHCenter; color: "#B8B8B8"; text: root.fileEntries.length === 0 ? root.fileStatus : "" }
+            footer: ZybText { width: fileList.width; horizontalAlignment: Text.AlignHCenter; color: "#B8B8B8"; text: root.fileEntries.length === 0 ? (root.fileStatus.length > 0 ? root.fileStatus : qsTr("文件夹为空")) : root.fileStatus }
         }
     }
     Rectangle {
@@ -525,10 +573,22 @@ property bool aiHistoryVisible: false
         color: "#99000000"
         MouseArea { anchors.fill: parent; onClicked: root.fileActionsVisible = false }
         Rectangle {
-            width: parent.width - 48; height: 220; radius: 10; color: "#292A2E"; anchors.centerIn: parent
-            ZybText { text: root.selectedFile ? root.selectedFile.name : ""; elide: Text.ElideMiddle; anchors.top: parent.top; anchors.topMargin: 18; anchors.left: parent.left; anchors.leftMargin: 20; anchors.right: parent.right; anchors.rightMargin: 20 }
-            BasicButton { text: qsTr("重命名"); anchors.left: parent.left; anchors.leftMargin: 20; anchors.right: parent.right; anchors.rightMargin: 20; anchors.top: parent.top; anchors.topMargin: 62; height: 50; radius: 7; checkable: false; backgroundTheme: root.cardColor; onClicked: { root.renameValue = root.selectedFile.name; root.fileActionsVisible = false; root.renameDialogVisible = true } }
-            BasicButton { text: qsTr("删除"); anchors.left: parent.left; anchors.leftMargin: 20; anchors.right: parent.right; anchors.rightMargin: 20; anchors.top: parent.top; anchors.topMargin: 122; height: 50; radius: 7; checkable: false; backgroundTheme: Qt.rgba(0.7, 0.18, 0.18, 0.75); onClicked: { if (root.selectedFile && fileService.remove(root.selectedFile.path)) root.openFiles(root.currentPath); else root.fileStatus = qsTr("删除失败"); root.fileActionsVisible = false } }
+            width: parent.width - 40; height: 320; radius: 10; color: "#292A2E"; anchors.centerIn: parent
+            ZybText { text: root.selectedFile ? root.selectedFile.name : ""; elide: Text.ElideMiddle; anchors.top: parent.top; anchors.topMargin: 16; anchors.left: parent.left; anchors.leftMargin: 20; anchors.right: parent.right; anchors.rightMargin: 20 }
+            ZybText { text: root.selectedFile ? root.selectedFile.path : ""; elide: Text.ElideMiddle; color: "#8E9099"; font.pixelSize: 12; anchors.top: parent.top; anchors.topMargin: 40; anchors.left: parent.left; anchors.leftMargin: 20; anchors.right: parent.right; anchors.rightMargin: 20 }
+            Grid {
+                columns: 2; spacing: 8
+                anchors.left: parent.left; anchors.right: parent.right; anchors.top: parent.top; anchors.bottom: parent.bottom
+                anchors.leftMargin: 16; anchors.rightMargin: 16; anchors.topMargin: 70; anchors.bottomMargin: 16
+                BasicButton { text: qsTr("复制"); width: (parent.width - 8) / 2; height: 46; radius: 7; checkable: false; backgroundTheme: root.cardColor; onClicked: { root.fileClipboard = root.selectedFile.path; root.fileClipboardCut = false; root.fileActionsVisible = false; root.showTip(qsTr("已复制，进入目标目录后点“粘贴”")) } }
+                BasicButton { text: qsTr("剪切"); width: (parent.width - 8) / 2; height: 46; radius: 7; checkable: false; backgroundTheme: root.cardColor; onClicked: { root.fileClipboard = root.selectedFile.path; root.fileClipboardCut = true; root.fileActionsVisible = false; root.showTip(qsTr("已剪切，进入目标目录后点“粘贴”")) } }
+                BasicButton { text: qsTr("压缩"); width: (parent.width - 8) / 2; height: 46; radius: 7; checkable: false; backgroundTheme: root.cardColor; onClicked: { root.compressSelected() } }
+                BasicButton { text: qsTr("解压"); width: (parent.width - 8) / 2; height: 46; radius: 7; checkable: false; enabled: root.selectedFile && root.selectedFile.archive; backgroundTheme: root.cardColor; onClicked: { root.extractSelected() } }
+                BasicButton { text: qsTr("编辑"); width: (parent.width - 8) / 2; height: 46; radius: 7; checkable: false; enabled: root.selectedFile && root.selectedFile.text; backgroundTheme: root.cardColor; onClicked: { root.fileActionsVisible = false; root.openText(root.selectedFile.path) } }
+                BasicButton { text: qsTr("属性"); width: (parent.width - 8) / 2; height: 46; radius: 7; checkable: false; backgroundTheme: root.cardColor; onClicked: { root.showFileInfo(root.selectedFile); root.fileActionsVisible = false } }
+                BasicButton { text: qsTr("重命名"); width: (parent.width - 8) / 2; height: 46; radius: 7; checkable: false; backgroundTheme: root.cardColor; onClicked: { root.renameValue = root.selectedFile.name; root.fileActionsVisible = false; root.renameDialogVisible = true } }
+                BasicButton { text: qsTr("删除"); width: (parent.width - 8) / 2; height: 46; radius: 7; checkable: false; backgroundTheme: Qt.rgba(0.7, 0.18, 0.18, 0.75); onClicked: { root.deleteTargetPath = root.selectedFile.path; root.fileActionsVisible = false; root.deleteDialogVisible = true } }
+            }
         }
     }
     Rectangle {
@@ -551,9 +611,41 @@ property bool aiHistoryVisible: false
                 }
             }
             BasicButton { text: qsTr("取消"); anchors.left: parent.left; anchors.leftMargin: 20; anchors.bottom: parent.bottom; anchors.bottomMargin: 16; width: 110; height: 48; radius: 7; checkable: false; backgroundTheme: root.cardColor; onClicked: root.renameDialogVisible = false }
-BasicButton { text: qsTr("确定"); anchors.right: parent.right; anchors.rightMargin: 20; anchors.bottom: parent.bottom; anchors.bottomMargin: 16; width: 110; height: 48; radius: 7; checkable: false; backgroundTheme: root.cardColor; onClicked: { if (root.selectedFile && fileService.rename(root.selectedFile.path, root.renameValue)) root.openFiles(root.currentPath); else root.fileStatus = qsTr("重命名失败"); root.renameDialogVisible = false } }
+            BasicButton { text: qsTr("确定"); anchors.right: parent.right; anchors.rightMargin: 20; anchors.bottom: parent.bottom; anchors.bottomMargin: 16; width: 110; height: 48; radius: 7; checkable: false; backgroundTheme: root.cardColor; onClicked: { if (root.selectedFile && fileService.rename(root.selectedFile.path, root.renameValue)) root.openFiles(root.currentPath); else { root.fileStatus = qsTr("重命名失败"); root.showTip(root.fileStatus) } root.renameDialogVisible = false } }
             Component.onCompleted: if (root.renameDialogVisible) renameInput.forceActiveFocus()
             onVisibleChanged: if (visible) renameInput.forceActiveFocus()
+        }
+    }
+    Rectangle {
+        visible: root.newFolderDialogVisible
+        z: 36
+        anchors.fill: parent
+        color: "#99000000"
+        Rectangle {
+            width: parent.width - 48; height: 190; radius: 10; color: "#292A2E"; anchors.centerIn: parent
+            ZybText { text: qsTr("新建文件夹"); anchors.top: parent.top; anchors.topMargin: 16; anchors.left: parent.left; anchors.leftMargin: 20 }
+            Rectangle {
+                anchors.left: parent.left; anchors.leftMargin: 20; anchors.right: parent.right; anchors.rightMargin: 20; anchors.top: parent.top; anchors.topMargin: 55; height: 46; radius: 5; color: "#151619"
+                TextInput { id: newFolderInput; anchors.fill: parent; anchors.margins: 8; color: "white"; font.pixelSize: 19; text: root.newFolderValue; selectByMouse: true; onTextChanged: root.newFolderValue = text }
+                MouseArea { anchors.fill: parent; onClicked: { newFolderInput.forceActiveFocus(); overlayKeyboard.showKeyboard() } }
+            }
+            BasicButton { text: qsTr("取消"); anchors.left: parent.left; anchors.leftMargin: 20; anchors.bottom: parent.bottom; anchors.bottomMargin: 16; width: 110; height: 48; radius: 7; checkable: false; backgroundTheme: root.cardColor; onClicked: root.newFolderDialogVisible = false }
+            BasicButton { text: qsTr("确定"); anchors.right: parent.right; anchors.rightMargin: 20; anchors.bottom: parent.bottom; anchors.bottomMargin: 16; width: 110; height: 48; radius: 7; checkable: false; backgroundTheme: root.cardColor; onClicked: { var values = fileService.createDirectory(root.currentPath, root.newFolderValue); if (values.ok) root.openFiles(root.currentPath); else { root.fileStatus = values.error; root.showTip(values.error) } root.newFolderDialogVisible = false } }
+            onVisibleChanged: if (visible) newFolderInput.forceActiveFocus()
+        }
+    }
+    Rectangle {
+        visible: root.deleteDialogVisible
+        z: 37
+        anchors.fill: parent
+        color: "#99000000"
+        Rectangle {
+            width: parent.width - 48; height: 210; radius: 10; color: "#292A2E"; anchors.centerIn: parent
+            ZybText { text: qsTr("确认删除"); font.styleName: "Bold"; anchors.top: parent.top; anchors.topMargin: 18; anchors.horizontalCenter: parent.horizontalCenter }
+            ZybText { text: root.deleteTargetPath; elide: Text.ElideMiddle; color: "#B8B8B8"; font.pixelSize: 14; anchors.top: parent.top; anchors.topMargin: 54; anchors.left: parent.left; anchors.leftMargin: 20; anchors.right: parent.right; anchors.rightMargin: 20 }
+            ZybText { text: qsTr("删除后无法恢复，目录会连同内容一起删除。"); color: "#E0A24A"; font.pixelSize: 14; wrapMode: Text.WordWrap; anchors.top: parent.top; anchors.topMargin: 82; anchors.left: parent.left; anchors.leftMargin: 20; anchors.right: parent.right; anchors.rightMargin: 20 }
+            BasicButton { text: qsTr("取消"); anchors.left: parent.left; anchors.leftMargin: 20; anchors.bottom: parent.bottom; anchors.bottomMargin: 16; width: 110; height: 48; radius: 7; checkable: false; backgroundTheme: root.cardColor; onClicked: root.deleteDialogVisible = false }
+            BasicButton { text: qsTr("删除"); anchors.right: parent.right; anchors.rightMargin: 20; anchors.bottom: parent.bottom; anchors.bottomMargin: 16; width: 110; height: 48; radius: 7; checkable: false; backgroundTheme: Qt.rgba(0.7, 0.18, 0.18, 0.75); onClicked: { if (fileService.remove(root.deleteTargetPath)) root.openFiles(root.currentPath); else { root.fileStatus = qsTr("删除失败，请检查权限"); root.showTip(root.fileStatus) } root.deleteDialogVisible = false } }
         }
     }
     Rectangle {
@@ -562,13 +654,34 @@ BasicButton { text: qsTr("确定"); anchors.right: parent.right; anchors.rightMa
         z: 40
         anchors.fill: parent
         color: "#0F0F0F"
-        Flickable { id: textFlick; anchors.fill: parent; clip: true; contentWidth: width; contentHeight: textView.height + 78; flickableDirection: Flickable.VerticalFlick
-            Item { width: textFlick.width; height: 65
-                ZybBackButton { anchors.top: parent.top; anchors.topMargin: 10; anchors.left: parent.left; anchors.leftMargin: 10; onBackClicked: root.readerVisible = false }
-                ZybText { text: textFileService.fileName(root.readerPath); font.styleName: "Bold"; elide: Text.ElideMiddle; anchors.top: parent.top; anchors.topMargin: 18; anchors.left: parent.left; anchors.leftMargin: 70; anchors.right: parent.right; anchors.rightMargin: 16 }
+        Flickable {
+            id: textFlick
+            anchors.fill: parent
+            clip: true
+            contentWidth: width
+            contentHeight: root.readerEditing ? Math.max(height, editorArea.height + 84) : (textView.height + 78)
+            flickableDirection: Flickable.VerticalFlick
+            Item {
+                width: textFlick.width; height: 65
+                ZybBackButton { anchors.top: parent.top; anchors.topMargin: 10; anchors.left: parent.left; anchors.leftMargin: 10; onBackClicked: { root.readerEditing = false; root.readerVisible = false; overlayKeyboard.hideKeyboard() } }
+                ZybText { text: textFileService.fileName(root.readerPath); font.styleName: "Bold"; elide: Text.ElideMiddle; anchors.top: parent.top; anchors.topMargin: 18; anchors.left: parent.left; anchors.leftMargin: 70; anchors.right: parent.right; anchors.rightMargin: 200 }
+                BasicButton { id: editButton; visible: !root.readerEditing; text: qsTr("编辑"); anchors.right: parent.right; anchors.rightMargin: 14; anchors.top: parent.top; anchors.topMargin: 10; width: 70; height: 42; radius: 7; checkable: false; backgroundTheme: root.cardColor; onClicked: root.beginEdit() }
+                BasicButton { visible: root.readerEditing; text: qsTr("保存"); anchors.right: parent.right; anchors.rightMargin: 14; anchors.top: parent.top; anchors.topMargin: 10; width: 70; height: 42; radius: 7; checkable: false; backgroundTheme: root.cardColor; onClicked: root.saveEdit() }
+                BasicButton { visible: root.readerEditing; text: qsTr("取消"); anchors.right: parent.right; anchors.rightMargin: 92; anchors.top: parent.top; anchors.topMargin: 10; width: 70; height: 42; radius: 7; checkable: false; backgroundTheme: root.cardColor; onClicked: root.cancelEdit() }
             }
-            Text { id: textView; y: 70; x: 18; width: textFlick.width - 36; text: root.readerError || root.readerContent; color: "#F2F2F2"; font.pixelSize: 20; wrapMode: Text.Wrap; textFormat: Text.PlainText }
+            Text { id: textView; visible: !root.readerEditing; y: 70; x: 18; width: textFlick.width - 36; text: root.readerError || root.readerContent; color: "#F2F2F2"; font.pixelSize: 20; wrapMode: Text.Wrap; textFormat: Text.PlainText }
+            TextEdit {
+                id: editorArea
+                visible: root.readerEditing
+                y: 70; x: 18; width: textFlick.width - 36
+                height: Math.max(contentHeight, textFlick.height - 100)
+                color: "#F2F2F2"; font.pixelSize: 20; wrapMode: TextEdit.Wrap
+                selectByMouse: true
+                onActiveFocusChanged: if (activeFocus && root.readerEditing) overlayKeyboard.showKeyboard()
+            }
+            MouseArea { visible: root.readerEditing; anchors.fill: editorArea; onClicked: { editorArea.forceActiveFocus(); overlayKeyboard.showKeyboard() } }
         }
+        ZybText { visible: root.readerStatus.length > 0; text: root.readerStatus; color: "#31C7A5"; font.pixelSize: 15; anchors.horizontalCenter: parent.horizontalCenter; anchors.bottom: parent.bottom; anchors.bottomMargin: 16 }
     }
 
     Rectangle {
@@ -859,6 +972,8 @@ BasicButton { text: qsTr("确定"); anchors.right: parent.right; anchors.rightMa
             }
         }
     }
+    }
+
     property string sshCommand: ""
     property int sshRefreshAttempts: 0
     Timer {
@@ -1126,10 +1241,91 @@ BasicButton { text: qsTr("确定"); anchors.right: parent.right; anchors.rightMa
 
     function openText(path) {
         var values = textFileService.readText(path)
+        root.readerEditing = false
+        root.readerStatus = ""
         readerPath = path
         readerContent = values && values.ok ? values.content : ""
         readerError = values && values.ok ? "" : (values && values.error ? values.error : qsTr("打开文件失败"))
         readerVisible = true
+    }
+
+    function beginEdit() {
+        if (root.readerError.length > 0) { root.readerStatus = qsTr("文件无法编辑"); return }
+        root.readerDraft = root.readerContent
+        root.readerEditing = true
+        root.readerStatus = qsTr("编辑模式：保存后立即写入文件")
+        editorArea.text = root.readerContent
+        editorArea.forceActiveFocus()
+        overlayKeyboard.showKeyboard()
+    }
+    function cancelEdit() {
+        root.readerEditing = false
+        root.readerStatus = ""
+        overlayKeyboard.hideKeyboard()
+    }
+    function saveEdit() {
+        var values = textFileService.saveText(root.readerPath, editorArea.text)
+        if (values && values.ok) {
+            root.readerContent = editorArea.text
+            root.readerEditing = false
+            root.readerStatus = qsTr("已保存")
+            root.showTip(qsTr("已保存"))
+            overlayKeyboard.hideKeyboard()
+        } else {
+            root.readerStatus = values && values.error ? values.error : qsTr("保存失败")
+            root.showTip(root.readerStatus)
+        }
+    }
+    function pasteFiles() {
+        if (root.fileClipboard.length === 0) return
+        var values = root.fileClipboardCut
+                ? fileService.moveInto(root.fileClipboard, root.currentPath)
+                : fileService.copyInto(root.fileClipboard, root.currentPath)
+        if (values && values.ok) {
+            root.fileClipboard = ""
+            root.fileClipboardCut = false
+            root.openFiles(root.currentPath)
+            root.showTip(qsTr("粘贴完成"))
+        } else {
+            root.fileStatus = values && values.error ? values.error : qsTr("粘贴失败")
+            root.showTip(root.fileStatus)
+        }
+    }
+    function compressSelected() {
+        if (!root.selectedFile) return
+        var values = fileService.compress([root.selectedFile.path], root.currentPath + "/" + root.selectedFile.name + ".tar.gz")
+        root.fileActionsVisible = false
+        if (values && values.ok) {
+            root.openFiles(root.currentPath)
+            root.showTip(qsTr("已压缩为 ") + values.path)
+        } else {
+            root.fileStatus = values && values.error ? values.error : qsTr("压缩失败")
+            root.showTip(root.fileStatus)
+        }
+    }
+    function extractSelected() {
+        if (!root.selectedFile) return
+        var values = fileService.extract(root.selectedFile.path, root.currentPath)
+        root.fileActionsVisible = false
+        if (values && values.ok) {
+            root.openFiles(root.currentPath)
+            root.showTip(qsTr("解压完成"))
+        } else {
+            root.fileStatus = values && values.error ? values.error : qsTr("解压失败")
+            root.showTip(root.fileStatus)
+        }
+    }
+    function showFileInfo(item) {
+        if (!item) return
+        root.fileStatus = (item.isDir ? qsTr("目录") : qsTr("文件")) + " · " + (item.size || "")
+                + " · " + (item.modified || "") + " · " + item.path
+        root.showTip(root.fileStatus)
+    }
+
+    function openExternalUrl(url) {
+        root.aboutPageVisible = false
+        root.pendingBrowserUrl = url
+        root.browserPageVisible = true
     }
 
     function refreshSshStatus() {
@@ -1205,7 +1401,7 @@ BasicButton { text: qsTr("确定"); anchors.right: parent.right; anchors.rightMa
     Text {
         id: tip
         visible: false
-        z: 10
+        z: 400
         anchors.horizontalCenter: parent.horizontalCenter
         anchors.bottom: parent.bottom
         anchors.bottomMargin: 22

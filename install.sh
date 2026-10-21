@@ -1,0 +1,111 @@
+#!/bin/sh
+# Z03Ultra one-shot installer / updater.
+# Downloads the latest GitHub release, verifies every artifact, installs it to
+# /home/user/z03plus and persists the boot-time bind mount hook.
+set -u
+
+REPO="${Z03ULTRA_REPO:-OpenZybTeam/zyb_P010-P011_PenUltra}"
+DEST="${Z03ULTRA_DEST:-/home/user/z03plus}"
+FILES="libZ03Plus.so z03plus.rcc Z03Plus z03ultra-boot.sh"
+INIT=/etc/init.d/zybz03qt-init
+HOOK_LINE='[ -x /home/user/z03plus/z03ultra-boot.sh ] && /home/user/z03plus/z03ultra-boot.sh'
+
+log() { echo "[z03ultra] $*"; }
+die() { echo "[z03ultra] $*" >&2; exit 1; }
+
+[ "$(id -u)" = 0 ] || die "请用 root 执行"
+command -v curl >/dev/null 2>&1 || die "缺少 curl"
+command -v sha256sum >/dev/null 2>&1 || die "缺少 sha256sum"
+[ -d "$DEST" ] || mkdir -p "$DEST" || die "无法创建 $DEST"
+
+if [ -n "${Z03ULTRA_BASE:-}" ]; then
+    BASE=$Z03ULTRA_BASE
+else
+    log "查询最新 release: $REPO"
+    JSON=$(curl -fsSL --connect-timeout 10 --max-time 30 \
+        "https://api.github.com/repos/$REPO/releases/latest") \
+        || die "无法访问 GitHub API，可设置 Z03ULTRA_BASE 指向 release 下载目录"
+    BASE=$(printf '%s\n' "$JSON" \
+        | grep -o '"browser_download_url": *"[^"]*SHA256SUMS"' \
+        | head -n 1 \
+        | sed 's/.*"\(http[^"]*\)".*/\1/' \
+        | sed 's#/SHA256SUMS$##')
+    [ -n "$BASE" ] || die "最新 release 中没有 SHA256SUMS，可设置 Z03ULTRA_BASE 手工指定"
+fi
+log "下载源: $BASE"
+
+TMP=${TMPDIR:-/tmp}/z03ultra-install.$$
+mkdir -p "$TMP" || die "无法创建临时目录"
+trap 'rm -rf "$TMP"' EXIT INT TERM
+
+curl -fsSL --connect-timeout 15 --max-time 60 -o "$TMP/SHA256SUMS" "$BASE/SHA256SUMS" \
+    || die "下载 SHA256SUMS 失败"
+
+for f in $FILES; do
+    log "下载 $f"
+    curl -fsSL --connect-timeout 15 --max-time 600 -o "$TMP/$f" "$BASE/$f" \
+        || die "下载 $f 失败"
+    want=$(grep " $f\$" "$TMP/SHA256SUMS" | awk '{print $1}' | head -n 1)
+    got=$(sha256sum "$TMP/$f" | awk '{print $1}')
+    [ -n "$want" ] || die "SHA256SUMS 中没有 $f"
+    [ "$want" = "$got" ] || die "$f 校验失败"
+done
+
+grep -q 'libZ03Plus.so' "$TMP/Z03Plus" || die "Z03Plus 未包含 DT_NEEDED 依赖"
+
+mkdir -p "$DEST/backup"
+for f in $FILES; do
+    [ -f "$DEST/$f" ] && cp -f "$DEST/$f" "$DEST/backup/$f"
+done
+
+for f in $FILES; do
+    cp -f "$TMP/$f" "$DEST/$f" || die "写入 $DEST/$f 失败"
+done
+chmod 755 "$DEST/libZ03Plus.so" "$DEST/Z03Plus" "$DEST/z03ultra-boot.sh"
+chmod 644 "$DEST/z03plus.rcc"
+log "文件已安装到 $DEST"
+
+mount -o remount,rw / 2>/dev/null || die "rootfs 无法改为可写"
+if ! grep -q 'z03ultra-boot.sh' "$INIT" 2>/dev/null; then
+    [ -f "$INIT" ] || die "找不到 $INIT"
+    cp -a "$INIT" "$DEST/zybz03qt-init.orig" || die "备份 $INIT 失败"
+    awk -v hook="$HOOK_LINE" '
+        /^\/usr\/bin\/zyb_z03_launch\.sh &/ && !done { print hook; done = 1 }
+        { print }
+    ' "$DEST/zybz03qt-init.orig" > "$INIT.z03ultra.new" || die "生成启动钩子失败"
+    chmod 755 "$INIT.z03ultra.new"
+    mv -f "$INIT.z03ultra.new" "$INIT" || die "替换 $INIT 失败"
+    log "已写入持久化启动钩子"
+else
+    log "启动钩子已存在，跳过"
+fi
+sync
+mount -o remount,ro / 2>/dev/null || true
+
+sh "$DEST/z03ultra-boot.sh"
+kill $(pidof Z03) 2>/dev/null
+kill $(pidof Z03Plus) 2>/dev/null
+GUARD=$(ps w | grep '[z]yb_z03_launch.sh' | awk '{print $1}' | head -n 1)
+[ -n "$GUARD" ] && kill -CONT "$GUARD" 2>/dev/null
+sleep 15
+
+PID=$(pidof Z03)
+[ -n "$PID" ] || PID=$(pidof Z03Plus)
+if [ -z "$PID" ]; then
+    log "守护循环未拉起应用，手动启动副本"
+    cd /home || exit 1
+    if command -v setsid >/dev/null 2>&1; then D=setsid; else D=nohup; fi
+    HOME=/home XDG_RUNTIME_DIR=/run/user/0 nohup $D "$DEST/Z03Plus" -platform wayland \
+        >"$DEST/z03plus.out" 2>&1 </dev/null &
+    sleep 12
+    PID=$(pidof Z03)
+    [ -n "$PID" ] || PID=$(pidof Z03Plus)
+fi
+
+[ -n "$PID" ] || die "应用未启动，查看 $DEST/z03plus.out"
+if grep -q 'libZ03Plus.so' "/proc/$PID/maps" 2>/dev/null; then
+    log "注入成功 pid=$PID"
+    log "打开 设置 -> Z03Ultra 扩展"
+else
+    die "注入未生效，查看 $DEST/boot-inject.log 与 /proc/$PID/maps"
+fi
