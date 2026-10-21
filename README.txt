@@ -14,15 +14,14 @@ Z03Ultra 是基于 Z03Plus 扩展项目发展而来的分支，保留其 overlay
 ---------------
 设备联网并以 root 执行：
 
-    curl -fsSL -o /tmp/z03ultra-install.sh https://raw.githubusercontent.com/OpenZybTeam/zyb_P010-P011_PenUltra/main/install.sh
-    sh /tmp/z03ultra-install.sh
+    curl -fsSL https://raw.githubusercontent.com/OpenZybTeam/zyb_P010-P011_PenUltra/main/install.sh | sh
 
-脚本读取 GitHub 最新 Release，校验 SHA256，备份旧文件到
-/home/user/z03plus/backup/，安装注入库、RCC、Z03Plus 副本与启动钩子，
-然后重启主界面并检查注入结果。
+脚本通过管道执行，不落盘。读取 GitHub 最新 Release，校验 SHA256，
+备份旧文件到 /home/user/z03plus/backup/，安装注入库、RCC 与 Z03Plus
+副本，写入一行 bind mount 启动钩子，然后重启主界面并检查注入结果。
 
 无法访问 GitHub 时：
-    Z03ULTRA_BASE=<release 下载目录> sh /tmp/z03ultra-install.sh
+    curl -fsSL <install.sh 地址> | Z03ULTRA_BASE=<release 下载目录> sh
 
 设备环境
 --------

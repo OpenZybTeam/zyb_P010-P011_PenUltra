@@ -17,7 +17,6 @@ Z03Ultra 基于 Z03Plus 扩展项目，本文对应 Z03 / P010 / P011 词典笔�
 | `libZ03PlusExporter.so` | 可选，导出运行时 QRC 资源 | 80212 B |
 | `z03plus.rcc` | 外部 QML 资源包，qres v2 | 210001 B |
 | `Z03Plus` | 原厂 Z03 副本，已加入 `DT_NEEDED` | 原厂大小加约 4 KB |
-| `z03ultra-boot.sh` | 启动钩子：把副本 bind mount 到 `/usr/bin/Z03` | 1 KB |
 | `install.sh` | 一键安装/更新脚本，读取最新 Release 并校验 | 4 KB |
 
 参考 SHA-256：
@@ -303,10 +302,9 @@ cp -f Z03Plus Z03Plus.bak
 curl -fL -o libZ03Plus.so "$BASE/libZ03Plus.so"
 curl -fL -o z03plus.rcc "$BASE/z03plus.rcc"
 curl -fL -o Z03Plus "$BASE/Z03Plus"
-curl -fL -o z03ultra-boot.sh "$BASE/z03ultra-boot.sh"
-chmod 755 libZ03Plus.so Z03Plus z03ultra-boot.sh
+chmod 755 libZ03Plus.so Z03Plus
 curl -fL -o SHA256SUMS "$BASE/SHA256SUMS"
-sha256sum libZ03Plus.so z03plus.rcc Z03Plus z03ultra-boot.sh
+sha256sum libZ03Plus.so z03plus.rcc Z03Plus
 ```
 
 把输出与 `SHA256SUMS` 中对应行比较即可。
@@ -321,7 +319,13 @@ sh /home/user/z03plus/setup_ssh.sh
 
 ### 9.1 自动注入机制
 
-本机固件的守护脚本 `/usr/bin/zyb_z03_launch.sh` 固定启动 `/usr/bin/Z03`，而 `/usr/bin` 在只读 rootfs 上。持久化注入的做法是在启动脚本拉起主程序之前，把副本 bind mount 到原路径：
+设备联网并以 root 执行，安装脚本通过管道运行，不在设备上落盘：
+
+```sh
+curl -fsSL https://raw.githubusercontent.com/OpenZybTeam/zyb_P010-P011_PenUltra/main/install.sh | sh
+```
+
+本机固件的守护脚本 `/usr/bin/zyb_z03_launch.sh` 固定启动 `/usr/bin/Z03`，而 `/usr/bin` 在只读 rootfs 上。持久化注入的做法是在拉起主程序之前，把副本 bind mount 到原路径：
 
 ```sh
 mount --bind /home/user/z03plus/Z03Plus /usr/bin/Z03
@@ -329,39 +333,33 @@ mount --bind /home/user/z03plus/Z03Plus /usr/bin/Z03
 
 原文件字节不变，挂载视图改变，守护脚本后续每次重启都会启动带 `DT_NEEDED` 的副本，动态加载器随即映射 `/home/user/z03plus/libZ03Plus.so` 并注册 `z03plus.rcc`。
 
-钩子由 `/etc/init.d/zybz03qt-init` 在 `/usr/bin/zyb_z03_launch.sh &` 之前调用 `/home/user/z03plus/z03ultra-boot.sh`。安装钩子需要临时把 rootfs 改成可写：
+钩子只有一行，由 `/etc/init.d/zybz03qt-init` 在 `/usr/bin/zyb_z03_launch.sh &` 之前执行：
+
+```sh
+Z=/home/user/z03plus/Z03Plus; L=/home/user/z03plus/libZ03Plus.so; [ -f "$Z" ] && [ -f "$L" ] && ! grep -q " /usr/bin/Z03 " /proc/mounts && mount --bind "$Z" /usr/bin/Z03
+```
+
+写入钩子需要临时把 rootfs 改成可写：
 
 ```sh
 mount -o remount,rw /
-cat > /home/user/z03plus/z03ultra-boot.sh <<'EOF'
-#!/bin/sh
-SRC=/home/user/z03plus/Z03Plus
-LIB=/home/user/z03plus/libZ03Plus.so
-LOG=/home/user/z03plus/boot-inject.log
-[ -f "$SRC" ] && [ -f "$LIB" ] || exit 0
-if grep -q " /usr/bin/Z03 " /proc/mounts 2>/dev/null; then
-  exit 0
-fi
-if mount --bind "$SRC" /usr/bin/Z03 2>/dev/null; then
-  echo "$(date) bind $SRC -> /usr/bin/Z03" >> "$LOG"
-else
-  echo "$(date) bind failed" >> "$LOG"
-fi
-EOF
-chmod 755 /home/user/z03plus/z03ultra-boot.sh
 cp -a /etc/init.d/zybz03qt-init /home/user/z03plus/zybz03qt-init.orig
-awk '/^\/usr\/bin\/zyb_z03_launch\.sh &/ && !d {print "[ -x /home/user/z03plus/z03ultra-boot.sh ] && /home/user/z03plus/z03ultra-boot.sh"; d=1} {print}' /home/user/z03plus/zybz03qt-init.orig > /etc/init.d/zybz03qt-init
+awk -v hook='Z=/home/user/z03plus/Z03Plus; L=/home/user/z03plus/libZ03Plus.so; [ -f "$Z" ] && [ -f "$L" ] && ! grep -q " /usr/bin/Z03 " /proc/mounts && mount --bind "$Z" /usr/bin/Z03' '
+    /z03ultra-boot\.sh/ { next }
+    /^\/usr\/bin\/zyb_z03_launch\.sh &/ && !done { print hook; done = 1 }
+    { print }
+' /home/user/z03plus/zybz03qt-init.orig > /etc/init.d/zybz03qt-init
 chmod 755 /etc/init.d/zybz03qt-init
 sync
 mount -o remount,ro /
 ```
 
-`libZ03Plus.so` 启动时调用 `qputenv("QML_DISABLE_DISK_CACHE", "1")`，旧 QML 缓存不会遮住新资源。升级固件会覆盖 `/etc/init.d/zybz03qt-init`，OTA 后重新执行上面的钩子安装即可。
+`libZ03Plus.so` 启动时调用 `qputenv("QML_DISABLE_DISK_CACHE", "1")`，旧 QML 缓存不会遮住新资源。升级固件会覆盖 `/etc/init.d/zybz03qt-init`，OTA 后重新执行安装脚本即可恢复。
 
 立即生效不需要重启：
 
 ```sh
-sh /home/user/z03plus/z03ultra-boot.sh
+[ -f /home/user/z03plus/Z03Plus ] && ! grep -q " /usr/bin/Z03 " /proc/mounts && mount --bind /home/user/z03plus/Z03Plus /usr/bin/Z03
 kill $(pidof Z03) 2>/dev/null
 sleep 15
 P=$(pidof Z03); echo "pid=$P"

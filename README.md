@@ -15,14 +15,13 @@ Z03Ultra 是基于 Z03Plus 扩展项目发展而来的分支，保留其 overlay
 设备联网并具备 root 权限时，在设备终端执行：
 
 ```sh
-curl -fsSL -o /tmp/z03ultra-install.sh https://raw.githubusercontent.com/OpenZybTeam/zyb_P010-P011_PenUltra/main/install.sh
-sh /tmp/z03ultra-install.sh
+curl -fsSL https://raw.githubusercontent.com/OpenZybTeam/zyb_P010-P011_PenUltra/main/install.sh | sh
 ```
 
-脚本会读取 GitHub 最新 Release，校验 `SHA256SUMS`，把旧文件备份到 `/home/user/z03plus/backup/`，安装 `libZ03Plus.so`、`z03plus.rcc`、`Z03Plus`、`z03ultra-boot.sh`，向 `/etc/init.d/zybz03qt-init` 写入持久化启动钩子，然后重启主界面并检查注入结果。
+脚本会读取 GitHub 最新 Release，校验 `SHA256SUMS`，把旧文件备份到 `/home/user/z03plus/backup/`，安装 `libZ03Plus.so`、`z03plus.rcc`、`Z03Plus`，把一行 bind mount 钩子写入 `/etc/init.d/zybz03qt-init`，然后重启主界面并检查注入结果。安装脚本通过管道执行，不会在设备上留下 `.sh` 文件。
 
-- 无法访问 GitHub 时，可指定下载目录：`Z03ULTRA_BASE=<release 下载目录> sh /tmp/z03ultra-install.sh`
-- 指定其他仓库：`Z03ULTRA_REPO=<owner/repo> sh /tmp/z03ultra-install.sh`
+- 无法访问 GitHub 时，可指定下载目录：`curl -fsSL <install.sh 地址> | Z03ULTRA_BASE=<release 下载目录> sh`
+- 指定其他仓库：`curl -fsSL <install.sh 地址> | Z03ULTRA_REPO=<owner/repo> sh`
 - 回退见下文“回退”一节。
 
 
@@ -246,7 +245,7 @@ ABI：r0=this，r1=bool finished，r2=const QString &text
 
 ### 7. 当前持久化状态
 
-持久化注入已落地：`/etc/init.d/zybz03qt-init` 在每次开机拉起守护脚本前执行 `/home/user/z03plus/z03ultra-boot.sh`，把副本 bind mount 到 `/usr/bin/Z03`。升级固件会覆盖该 init 脚本，OTA 后重新执行 `install.sh` 即可恢复。扫描输入的“令牌拦截 + 回填 AI 输入框”尚未部署，不应把它描述为已完成。
+持久化注入已落地：`/etc/init.d/zybz03qt-init` 在每次开机拉起守护脚本前执行一行 bind mount，把副本挂到 `/usr/bin/Z03`。升级固件会覆盖该 init 脚本，OTA 后重新执行 `install.sh` 即可恢复。扫描输入的“令牌拦截 + 回填 AI 输入框”尚未部署，不应把它描述为已完成。
 
 
 

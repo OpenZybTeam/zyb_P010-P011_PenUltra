@@ -1,14 +1,14 @@
 #!/bin/sh
 # Z03Ultra one-shot installer / updater.
 # Downloads the latest GitHub release, verifies every artifact, installs it to
-# /home/user/z03plus and persists the boot-time bind mount hook.
+# /home/user/z03plus and adds the persistent bind-mount hook to zybz03qt-init.
 set -u
 
 REPO="${Z03ULTRA_REPO:-OpenZybTeam/zyb_P010-P011_PenUltra}"
 DEST="${Z03ULTRA_DEST:-/home/user/z03plus}"
-FILES="libZ03Plus.so z03plus.rcc Z03Plus z03ultra-boot.sh"
+FILES="libZ03Plus.so z03plus.rcc Z03Plus"
 INIT=/etc/init.d/zybz03qt-init
-HOOK_LINE='[ -x /home/user/z03plus/z03ultra-boot.sh ] && /home/user/z03plus/z03ultra-boot.sh'
+HOOK_LINE='Z=/home/user/z03plus/Z03Plus; L=/home/user/z03plus/libZ03Plus.so; [ -f "$Z" ] && [ -f "$L" ] && ! grep -q " /usr/bin/Z03 " /proc/mounts && mount --bind "$Z" /usr/bin/Z03'
 
 log() { echo "[z03ultra] $*"; }
 die() { echo "[z03ultra] $*" >&2; exit 1; }
@@ -72,15 +72,18 @@ done
 for f in $FILES; do
     cp -f "$TMP/$f" "$DEST/$f" || die "写入 $DEST/$f 失败"
 done
-chmod 755 "$DEST/libZ03Plus.so" "$DEST/Z03Plus" "$DEST/z03ultra-boot.sh"
+chmod 755 "$DEST/libZ03Plus.so" "$DEST/Z03Plus"
 chmod 644 "$DEST/z03plus.rcc"
 log "文件已安装到 $DEST"
 
 mount -o remount,rw / 2>/dev/null || die "rootfs 无法改为可写"
-if ! grep -q 'z03ultra-boot.sh' "$INIT" 2>/dev/null; then
+if ! grep -q 'mount --bind' "$INIT" 2>/dev/null; then
     [ -f "$INIT" ] || die "找不到 $INIT"
-    cp -a "$INIT" "$DEST/zybz03qt-init.orig" || die "备份 $INIT 失败"
+    if [ ! -f "$DEST/zybz03qt-init.orig" ]; then
+        cp -a "$INIT" "$DEST/zybz03qt-init.orig" || die "备份 $INIT 失败"
+    fi
     awk -v hook="$HOOK_LINE" '
+        /z03ultra-boot\.sh/ { next }
         /^\/usr\/bin\/zyb_z03_launch\.sh &/ && !done { print hook; done = 1 }
         { print }
     ' "$DEST/zybz03qt-init.orig" > "$INIT.z03ultra.new" || die "生成启动钩子失败"
@@ -93,7 +96,7 @@ fi
 sync
 mount -o remount,ro / 2>/dev/null || true
 
-sh "$DEST/z03ultra-boot.sh"
+[ -f "$DEST/Z03Plus" ] && [ -f "$DEST/libZ03Plus.so" ] && ! grep -q " /usr/bin/Z03 " /proc/mounts && mount --bind "$DEST/Z03Plus" /usr/bin/Z03 2>/dev/null
 kill $(pidof Z03) 2>/dev/null
 kill $(pidof Z03Plus) 2>/dev/null
 GUARD=$(ps w | grep '[z]yb_z03_launch.sh' | awk '{print $1}' | head -n 1)
