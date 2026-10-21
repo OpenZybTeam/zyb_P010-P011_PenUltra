@@ -322,7 +322,7 @@ sh /home/user/z03plus/setup_ssh.sh
 设备联网并以 root 执行，安装脚本通过管道运行，不在设备上落盘：
 
 ```sh
-curl -fsSL https://raw.githubusercontent.com/OpenZybTeam/zyb_P010-P011_PenUltra/main/install.sh | sh
+curl -fsSL https://github.com/OpenZybTeam/zyb_P010-P011_PenUltra/releases/latest/download/install.sh | sh
 ```
 
 本机固件的守护脚本 `/usr/bin/zyb_z03_launch.sh` 固定启动 `/usr/bin/Z03`，而 `/usr/bin` 在只读 rootfs 上。持久化注入的做法是在拉起主程序之前，把副本 bind mount 到原路径：

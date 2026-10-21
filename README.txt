@@ -14,7 +14,7 @@ Z03Ultra 是基于 Z03Plus 扩展项目发展而来的分支，保留其 overlay
 ---------------
 设备联网并以 root 执行：
 
-    curl -fsSL https://raw.githubusercontent.com/OpenZybTeam/zyb_P010-P011_PenUltra/main/install.sh | sh
+    curl -fsSL https://github.com/OpenZybTeam/zyb_P010-P011_PenUltra/releases/latest/download/install.sh | sh
 
 脚本通过管道执行，不落盘。读取 GitHub 最新 Release，校验 SHA256，
 备份旧文件到 /home/user/z03plus/backup/，安装注入库、RCC 与 Z03Plus

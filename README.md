@@ -15,7 +15,7 @@ Z03Ultra 是基于 Z03Plus 扩展项目发展而来的分支，保留其 overlay
 设备联网并具备 root 权限时，在设备终端执行：
 
 ```sh
-curl -fsSL https://raw.githubusercontent.com/OpenZybTeam/zyb_P010-P011_PenUltra/main/install.sh | sh
+curl -fsSL https://github.com/OpenZybTeam/zyb_P010-P011_PenUltra/releases/latest/download/install.sh | sh
 ```
 
 脚本会读取 GitHub 最新 Release，校验 `SHA256SUMS`，把旧文件备份到 `/home/user/z03plus/backup/`，安装 `libZ03Plus.so`、`z03plus.rcc`、`Z03Plus`，把一行 bind mount 钩子写入 `/etc/init.d/zybz03qt-init`，然后重启主界面并检查注入结果。安装脚本通过管道执行，不会在设备上留下 `.sh` 文件。
