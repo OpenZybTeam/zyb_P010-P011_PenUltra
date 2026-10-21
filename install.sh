@@ -18,33 +18,44 @@ command -v curl >/dev/null 2>&1 || die "缺少 curl"
 command -v sha256sum >/dev/null 2>&1 || die "缺少 sha256sum"
 [ -d "$DEST" ] || mkdir -p "$DEST" || die "无法创建 $DEST"
 
-if [ -n "${Z03ULTRA_BASE:-}" ]; then
-    BASE=$Z03ULTRA_BASE
-else
-    log "查询最新 release: $REPO"
-    JSON=$(curl -fsSL --connect-timeout 10 --max-time 30 \
-        "https://api.github.com/repos/$REPO/releases/latest") \
-        || die "无法访问 GitHub API，可设置 Z03ULTRA_BASE 指向 release 下载目录"
-    BASE=$(printf '%s\n' "$JSON" \
-        | grep -o '"browser_download_url": *"[^"]*SHA256SUMS"' \
-        | head -n 1 \
-        | sed 's/.*"\(http[^"]*\)".*/\1/' \
-        | sed 's#/SHA256SUMS$##')
-    [ -n "$BASE" ] || die "最新 release 中没有 SHA256SUMS，可设置 Z03ULTRA_BASE 手工指定"
-fi
-log "下载源: $BASE"
-
 TMP=${TMPDIR:-/tmp}/z03ultra-install.$$
 mkdir -p "$TMP" || die "无法创建临时目录"
 trap 'rm -rf "$TMP"' EXIT INT TERM
 
-curl -fsSL --connect-timeout 15 --max-time 60 -o "$TMP/SHA256SUMS" "$BASE/SHA256SUMS" \
-    || die "下载 SHA256SUMS 失败"
+download() {
+    curl -fsSL --connect-timeout 15 --max-time "$3" -o "$2" "$1" && return 0
+    curl -fsSLk --connect-timeout 15 --max-time "$3" -o "$2" "$1" && return 0
+    return 1
+}
+
+TAG=
+if [ -n "${Z03ULTRA_BASE:-}" ]; then
+    BASE=$Z03ULTRA_BASE
+else
+    log "查询最新 release: $REPO"
+    if download "https://api.github.com/repos/$REPO/releases/latest" "$TMP/release.json" 30; then
+        BASE=$(grep -o '"browser_download_url": *"[^"]*SHA256SUMS"' "$TMP/release.json" \
+            | head -n 1 \
+            | sed 's/.*"\(http[^"]*\)".*/\1/' \
+            | sed 's#/SHA256SUMS$##')
+    fi
+    if [ -z "${BASE:-}" ]; then
+        log "API 不可用，改用 releases/latest 跳转"
+        TAG=$(curl -fsSI --connect-timeout 10 "https://github.com/$REPO/releases/latest" 2>/dev/null \
+            | tr -d '\r' | awk 'tolower($1) == "location:" { print $2 }' | sed 's#.*/tag/##')
+        [ -n "$TAG" ] || TAG=$(curl -fsSIk --connect-timeout 10 "https://github.com/$REPO/releases/latest" 2>/dev/null \
+            | tr -d '\r' | awk 'tolower($1) == "location:" { print $2 }' | sed 's#.*/tag/##')
+        [ -n "$TAG" ] && BASE="https://github.com/$REPO/releases/download/$TAG"
+    fi
+    [ -n "${BASE:-}" ] || die "无法获取最新 release，可设置 Z03ULTRA_BASE 指向下载目录"
+fi
+log "下载源: $BASE"
+
+download "$BASE/SHA256SUMS" "$TMP/SHA256SUMS" 60 || die "下载 SHA256SUMS 失败"
 
 for f in $FILES; do
     log "下载 $f"
-    curl -fsSL --connect-timeout 15 --max-time 600 -o "$TMP/$f" "$BASE/$f" \
-        || die "下载 $f 失败"
+    download "$BASE/$f" "$TMP/$f" 600 || die "下载 $f 失败"
     want=$(grep " $f\$" "$TMP/SHA256SUMS" | awk '{print $1}' | head -n 1)
     got=$(sha256sum "$TMP/$f" | awk '{print $1}')
     [ -n "$want" ] || die "SHA256SUMS 中没有 $f"
