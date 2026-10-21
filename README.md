@@ -120,7 +120,11 @@ curl -fsSL https://github.com/OpenZybTeam/zyb_P010-P011_PenUltra/releases/latest
 
 ```sh
 mount -o remount,rw /
-cp -a /home/user/z03plus/zybz03qt-init.orig /etc/init.d/zybz03qt-init
+if [ -f /home/user/z03plus/zybz03qt-init.orig ]; then
+  cp -a /home/user/z03plus/zybz03qt-init.orig /etc/init.d/zybz03qt-init
+else
+  sed -i '/mount --bind.*Z03Plus/d' /etc/init.d/zybz03qt-init
+fi
 sync
 mount -o remount,ro /
 kill $(pidof Z03) 2>/dev/null
@@ -137,7 +141,7 @@ G=$(ps w | grep '[z]yb_z03_launch.sh' | awk '{print $1}' | head -n 1)
 [ -n "$G" ] && kill -STOP $G
 kill $(pidof Z03) 2>/dev/null
 sleep 1
-umount /usr/bin/Z03 2>/dev/null
+umount /usr/bin/Z03 2>/dev/null || umount -l /usr/bin/Z03 2>/dev/null
 mount -o remount,rw /
 if [ -f /home/user/z03plus/zybz03qt-init.orig ]; then
   cp -a /home/user/z03plus/zybz03qt-init.orig /etc/init.d/zybz03qt-init

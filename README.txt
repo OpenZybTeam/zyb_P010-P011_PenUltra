@@ -129,7 +129,7 @@ bind mount 随重启消失，守护脚本恢复启动原厂 /usr/bin/Z03。
     [ -n "$G" ] && kill -STOP $G
     kill $(pidof Z03) 2>/dev/null
     sleep 1
-    umount /usr/bin/Z03 2>/dev/null
+    umount /usr/bin/Z03 2>/dev/null || umount -l /usr/bin/Z03 2>/dev/null
     mount -o remount,rw /
     cp -a /home/user/z03plus/zybz03qt-init.orig /etc/init.d/zybz03qt-init
     sync
