@@ -121,6 +121,25 @@ Z03Ultra 是基于 Z03Plus 扩展项目发展而来的分支，保留其 overlay
 bind mount 随重启消失，守护脚本恢复启动原厂 /usr/bin/Z03。
 旧版本文件位于 /home/user/z03plus/backup/。
 
+卸载
+----
+完全移除 Ultra（恢复原厂启动并删除 /home/user/z03plus/）：
+
+    G=$(ps w | grep '[z]yb_z03_launch.sh' | awk '{print $1}' | head -1)
+    [ -n "$G" ] && kill -STOP $G
+    kill $(pidof Z03) 2>/dev/null
+    sleep 1
+    umount /usr/bin/Z03 2>/dev/null
+    mount -o remount,rw /
+    cp -a /home/user/z03plus/zybz03qt-init.orig /etc/init.d/zybz03qt-init
+    sync
+    mount -o remount,ro /
+    rm -rf /home/user/z03plus
+    [ -n "$G" ] && kill -CONT $G
+
+必须先 umount 再删目录，否则源文件被 bind mount 占用会报 busy。
+只想关闭注入时跳过 rm -rf，保留 AI 配置与录音。
+
 注意事项
 --------
 - 修改 QML 或 RCC 后重启主界面即可。库启动时设置

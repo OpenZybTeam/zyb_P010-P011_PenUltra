@@ -267,6 +267,32 @@ adb shell "chmod 755 /home/user/z03plus/Z03Plus"
 
 然后重启 Z03 服务或设备。
 
+### 6.3 完全卸载
+
+恢复原厂启动并删除整个 `/home/user/z03plus/`：
+
+```sh
+G=$(ps w | grep '[z]yb_z03_launch.sh' | awk '{print $1}' | head -1)
+[ -n "$G" ] && kill -STOP $G
+kill $(pidof Z03) 2>/dev/null
+sleep 1
+umount /usr/bin/Z03 2>/dev/null
+mount -o remount,rw /
+if [ -f /home/user/z03plus/zybz03qt-init.orig ]; then
+  cp -a /home/user/z03plus/zybz03qt-init.orig /etc/init.d/zybz03qt-init
+else
+  awk '!/mount --bind.*Z03Plus/ && !/z03ultra-boot\.sh/' /etc/init.d/zybz03qt-init > /etc/init.d/zybz03qt-init.new
+  chmod 755 /etc/init.d/zybz03qt-init.new
+  mv -f /etc/init.d/zybz03qt-init.new /etc/init.d/zybz03qt-init
+fi
+sync
+mount -o remount,ro /
+rm -rf /home/user/z03plus
+[ -n "$G" ] && kill -CONT $G
+```
+
+`umount` 必须在 `rm -rf` 之前：源文件仍被 bind mount 占用时删除会报 `Device or resource busy`。仅关闭注入、保留 AI 配置与录音时跳过 `rm -rf`，只删除 `Z03Plus`、`libZ03Plus.so`、`z03plus.rcc`。
+
 ## 7. 常见问题
 
 | 现象 | 检查 |
