@@ -133,7 +133,7 @@ kill $(pidof Z03) 2>/dev/null
 完全移除 Ultra（恢复原厂启动并删除 `/home/user/z03plus/`）：
 
 ```sh
-G=$(ps w | grep '[z]yb_z03_launch.sh' | awk '{print $1}' | head -1)
+G=$(ps w | grep '[z]yb_z03_launch.sh' | awk '{print $1}' | head -n 1)
 [ -n "$G" ] && kill -STOP $G
 kill $(pidof Z03) 2>/dev/null
 sleep 1
