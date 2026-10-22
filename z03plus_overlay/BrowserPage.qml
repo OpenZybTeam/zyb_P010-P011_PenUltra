@@ -14,7 +14,20 @@ Rectangle {
     property string typedUrl: ""
     property bool pageError: false
     property string errorText: ""
+    property bool desktopUA: false
     signal closeRequested()
+
+    function applyUserAgent() {
+        var ua = desktopUA
+            ? "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/61.0.3163.140 Safari/537.36"
+            : "Mozilla/5.0 (Linux; Android 9; Z03Ultra) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/61.0.3163.140 Mobile Safari/537.36"
+        try {
+            if (web.profile)
+                web.profile.httpUserAgent = ua
+        } catch (e) {
+            console.log("browser: cannot set user agent", e)
+        }
+    }
 
     function navigateTo(text) {
         var target = String(text || "").trim()
@@ -281,6 +294,30 @@ Rectangle {
                         }
                     }
                 }
+                Rectangle {
+                    width: uaLabel.implicitWidth + 18
+                    height: 26
+                    radius: 13
+                    color: root.desktopUA ? "#1B2E28" : "#1E1F24"
+                    border.color: root.desktopUA ? "#2FA98D" : "#3A3B42"
+                    border.width: 1
+                    Text {
+                        id: uaLabel
+                        anchors.centerIn: parent
+                        text: root.desktopUA ? qsTr("UA: 桌面") : qsTr("UA: 移动")
+                        color: root.desktopUA ? "#7FE0C8" : "#CCCCCC"
+                        font.pixelSize: 12
+                    }
+                    MouseArea {
+                        anchors.fill: parent
+                        onClicked: {
+                            root.desktopUA = !root.desktopUA
+                            root.applyUserAgent()
+                            if (String(web.url).length > 0 && String(web.url) !== "about:blank")
+                                web.reload()
+                        }
+                    }
+                }
             }
         }
     }
@@ -319,12 +356,7 @@ Rectangle {
                     addressInput.text = web.url
             }
             Component.onCompleted: {
-                try {
-                    if (web.profile)
-                        web.profile.httpUserAgent = "Mozilla/5.0 (Linux; Android 9; Z03Ultra) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/61.0.3163.140 Mobile Safari/537.36"
-                } catch (e) {
-                    console.log("browser: cannot set user agent", e)
-                }
+                root.applyUserAgent()
                 try {
                     web.newViewRequested.connect(function(request) {
                         if (request && request.requestedUrl)

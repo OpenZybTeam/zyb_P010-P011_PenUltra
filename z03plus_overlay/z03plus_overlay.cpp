@@ -2728,7 +2728,7 @@ private:
 };
 
 
-#define Z03ULTRA_VERSION "1.2.8"
+#define Z03ULTRA_VERSION "1.2.9"
 #define Z03ULTRA_REPO "OpenZybTeam/zyb_P010-P011_PenUltra"
 #define Z03ULTRA_MIRROR_PREFIX "https://git.yylx.win/"
 
