@@ -33,7 +33,8 @@ command -v curl >/dev/null 2>&1 || die "缺少 curl"
 command -v sha256sum >/dev/null 2>&1 || die "缺少 sha256sum"
 [ -d "$DEST" ] || mkdir -p "$DEST" || die "无法创建 $DEST"
 
-TMP=${TMPDIR:-/tmp}/z03ultra-install.$$
+mkdir -p "$DEST/tmp" || die "无法创建 $DEST/tmp"
+TMP="$DEST/tmp/z03ultra-install.$$"
 mkdir -p "$TMP" || die "无法创建临时目录"
 trap 'rm -rf "$TMP"' EXIT INT TERM
 
@@ -44,7 +45,9 @@ download() {
 }
 
 report_progress() {
-    sz=$(wc -c < "$1" 2>/dev/null | tr -d ' ')
+    if [ -f "$1" ]; then
+        sz=$(wc -c < "$1" 2>/dev/null | tr -d ' ')
+    fi
     [ -n "$sz" ] || sz=0
     if [ -n "$2" ] && [ "$2" -gt 0 ] 2>/dev/null; then
         awk -v s="$sz" -v t="$2" 'BEGIN { printf "\r[z03ultra]   %.1f / %.1f MB  %.0f%%", s/1048576, t/1048576, s*100/t }'
@@ -67,6 +70,9 @@ fetch_asset() {
     dst=$3
     printf '[z03ultra] 下载 %s\n' "$name"
     total=$(asset_total "$src")
+    case "$total" in
+        ''|*[!0-9]*) total= ;;
+    esac
     n=0
     while [ "$n" -lt 5 ]; do
         n=$((n + 1))

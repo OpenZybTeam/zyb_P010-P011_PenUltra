@@ -21,7 +21,9 @@ die() { echo "[z03ultra] $*" >&2; exit 1; }
 command -v curl >/dev/null 2>&1 || die "缺少 curl"
 
 log "更新源: $( [ "$MIRROR" = 1 ] && echo 镜像 || echo 直连 )"
-TMPF=$(mktemp /tmp/z03ultra-update.XXXXXX) || die "无法创建临时文件"
+TMPD="${Z03ULTRA_DEST:-/home/user/z03plus}/tmp"
+mkdir -p "$TMPD" 2>/dev/null || TMPD=/tmp
+TMPF=$(mktemp "$TMPD/z03ultra-update.XXXXXX" 2>/dev/null) || TMPF="$TMPD/z03ultra-update.$$"
 trap 'rm -f "$TMPF"' EXIT INT TERM
 curl -fsSLk --connect-timeout 20 --max-time 120 "$BASE" -o "$TMPF" \
     || die "下载安装脚本失败，可改用 --direct/--mirror 重试"
