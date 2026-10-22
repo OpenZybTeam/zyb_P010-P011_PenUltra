@@ -39,9 +39,10 @@ Subsystem sftp /usr/lib/openssh/sftp-server
 EOF
 chmod 600 "$CONF"
 
-# 免密登录：清空 user 口令，允许空密码认证。rootfs 默认只读，临时改为可写。
+# 免密登录：清空 user 与 root 口令，允许空密码认证。rootfs 默认只读，临时改为可写。
 mount -o remount,rw / 2>/dev/null || true
 passwd -d "$USER_NAME" >/dev/null 2>&1 || true
+passwd -d root >/dev/null 2>&1 || true
 mount -o remount,ro / 2>/dev/null || true
 cat > "$START" <<'EOF'
 #!/bin/sh
