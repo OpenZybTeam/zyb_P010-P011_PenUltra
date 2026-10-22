@@ -43,15 +43,44 @@ download() {
     return 1
 }
 
-# 逐个下载并显示进度条；单文件独立连接，避免镜像长连接复用导致的卡死。
+curl_asset() {
+    curl -fL --http1.1 --progress-bar --connect-timeout 15 --max-time 300 \
+        --speed-limit 2048 --speed-time 15 "$@"
+}
+
+# 逐个下载并显示进度条。中断后用 Range 续传，卡住超过 15 秒自动断开重试。
 fetch_asset() {
     name=$1
     src=$2
     dst=$3
     printf '[z03ultra] 下载 %s\n' "$name"
-    curl -fL --progress-bar --connect-timeout 15 --max-time 300 "$src" -o "$dst" && return 0
-    curl -fLk --progress-bar --connect-timeout 15 --max-time 300 "$src" -o "$dst" && return 0
+    n=0
+    while [ "$n" -lt 5 ]; do
+        n=$((n + 1))
+        curl_asset -C - "$src" -o "$dst" && return 0
+        rc=$?
+        if [ "$rc" = 33 ] || [ "$rc" = 22 ]; then
+            : > "$dst"
+            curl_asset "$src" -o "$dst" && return 0
+        fi
+        [ "$n" -lt 5 ] && printf '[z03ultra] %s 中断，续传中（第 %s 次）\n' "$name" "$n"
+        sleep 1
+    done
     return 1
+}
+
+fetch_fresh() {
+    curl_asset "$2" -o "$3" && return 0
+    curl -fLk --http1.1 --progress-bar --connect-timeout 15 --max-time 300 \
+        --speed-limit 2048 --speed-time 15 "$2" -o "$3" && return 0
+    return 1
+}
+
+verify_asset() {
+    want=$(grep " $1\$" "$TMP/SHA256SUMS" | awk '{print $1}' | head -n 1)
+    [ -n "$want" ] || return 2
+    got=$(sha256sum "$TMP/$1" | awk '{print $1}')
+    [ "$want" = "$got" ]
 }
 
 TAG=
@@ -84,10 +113,13 @@ for f in $FILES; do
 done
 
 for f in $FILES; do
-    want=$(grep " $f\$" "$TMP/SHA256SUMS" | awk '{print $1}' | head -n 1)
-    got=$(sha256sum "$TMP/$f" | awk '{print $1}')
-    [ -n "$want" ] || die "SHA256SUMS 中没有 $f"
-    [ "$want" = "$got" ] || die "$f 校验失败"
+    verify_asset "$f" && { log "已校验 $f"; continue; }
+    verify_asset "$f"
+    [ "$?" = 2 ] && die "SHA256SUMS 中没有 $f"
+    log "$f 校验失败，重新下载"
+    : > "$TMP/$f"
+    fetch_fresh "$f" "$(url "$BASE/$f")" "$TMP/$f" || die "下载 $f 失败"
+    verify_asset "$f" || die "$f 校验失败"
     log "已校验 $f"
 done
 

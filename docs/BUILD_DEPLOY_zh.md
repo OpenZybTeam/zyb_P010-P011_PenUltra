@@ -425,7 +425,7 @@ model=gpt-3.5-turbo
 
 ## 11. 版本号、应用内更新与下载源
 
-当前版本号定义在 `z03plus_overlay/z03plus_overlay.cpp` 的 `Z03ULTRA_VERSION`，关于页直接读取该常量显示 `v1.1.8`。发版时同步修改该常量并创建同名 tag。
+当前版本号定义在 `z03plus_overlay/z03plus_overlay.cpp` 的 `Z03ULTRA_VERSION`，关于页直接读取该常量显示 `v1.1.9`。发版时同步修改该常量并创建同名 tag。
 
 关于页的「检测更新」通过 GitHub API 读取 `releases/latest`，比较 `tag_name` 与当前版本。检测与下载都支持两种源：
 
