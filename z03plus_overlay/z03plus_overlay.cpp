@@ -2728,7 +2728,7 @@ private:
 };
 
 
-#define Z03ULTRA_VERSION "1.2.5"
+#define Z03ULTRA_VERSION "1.2.6"
 #define Z03ULTRA_REPO "OpenZybTeam/zyb_P010-P011_PenUltra"
 #define Z03ULTRA_MIRROR_PREFIX "https://down.npee.cn/?"
 

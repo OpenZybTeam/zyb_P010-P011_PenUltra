@@ -12,8 +12,9 @@ for arg in "$@"; do
     esac
 done
 
-BASE="https://github.com/$REPO/releases/latest/download/install.sh"
-[ "$MIRROR" = 1 ] && BASE="https://down.npee.cn/?$BASE"
+DIRECT="https://github.com/$REPO/releases/latest/download/install.sh"
+BASE="$DIRECT"
+[ "$MIRROR" = 1 ] && BASE="https://down.npee.cn/?$DIRECT"
 
 log() { echo "[z03ultra] $*"; }
 die() { echo "[z03ultra] $*" >&2; exit 1; }
@@ -25,8 +26,12 @@ TMPD="${Z03ULTRA_DEST:-/home/user/z03plus}/tmp"
 mkdir -p "$TMPD" 2>/dev/null || TMPD=/tmp
 TMPF=$(mktemp "$TMPD/z03ultra-update.XXXXXX" 2>/dev/null) || TMPF="$TMPD/z03ultra-update.$$"
 trap 'rm -f "$TMPF"' EXIT INT TERM
-curl -fsSLk --connect-timeout 20 --max-time 120 "$BASE" -o "$TMPF" \
-    || die "下载安装脚本失败，可改用 --direct/--mirror 重试"
+if ! curl -fsSLk --connect-timeout 20 --max-time 120 "$BASE" -o "$TMPF"; then
+    [ "$BASE" = "$DIRECT" ] && die "下载安装脚本失败，可改用 --direct/--mirror 重试"
+    log "镜像不可用，改直连重试"
+    curl -fsSLk --connect-timeout 20 --max-time 120 "$DIRECT" -o "$TMPF" \
+        || die "下载安装脚本失败，可改用 --direct/--mirror 重试"
+fi
 [ -s "$TMPF" ] || die "安装脚本内容为空"
 log "安装脚本已获取（$(wc -c < "$TMPF" | tr -d ' ') 字节）"
 

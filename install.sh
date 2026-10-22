@@ -75,7 +75,9 @@ fetch_asset() {
         ''|*[!0-9]*) total= ;;
     esac
     n=0
-    while [ "$n" -lt 5 ]; do
+    max=5
+    [ -n "${4:-}" ] && max=1
+    while [ "$n" -lt "$max" ]; do
         n=$((n + 1))
         curl -fsSLk -C - -o "$dst" "$src" 2>/dev/null &
         pid=$!
@@ -91,7 +93,7 @@ fetch_asset() {
         if [ "$rc" = 33 ] || [ "$rc" = 22 ]; then
             : > "$dst"
         fi
-        [ "$n" -lt 5 ] && printf '[z03ultra] %s 未完成，续传中（第 %s 次）\n' "$name" "$n"
+        [ "$n" -lt "$max" ] && printf '[z03ultra] %s 未完成，续传中（第 %s 次）\n' "$name" "$n"
         sleep 2
     done
     if [ -n "${4:-}" ]; then
