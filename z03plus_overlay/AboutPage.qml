@@ -114,18 +114,29 @@ Rectangle {
                         wrapMode: Text.WordWrap
                     }
 
-                    Rectangle {
+                    Row {
                         width: parent.width
-                        height: 6
-                        radius: 3
-                        color: "#2A2E33"
-                        visible: updater.busy && updater.progress > 0
+                        spacing: 10
+                        visible: updater.busy && updater.state === "downloading"
 
                         Rectangle {
-                            width: parent.width * Math.min(100, updater.progress) / 100
-                            height: parent.height
-                            radius: 3
-                            color: "#31C7A5"
+                            width: parent.width - 60
+                            height: 8
+                            radius: 4
+                            color: "#2A2E33"
+
+                            Rectangle {
+                                width: parent.width * Math.min(100, updater.progress) / 100
+                                height: parent.height
+                                radius: 4
+                                color: "#31C7A5"
+                            }
+                        }
+
+                        ZybText {
+                            text: updater.progress + "%"
+                            color: "#9DA4AD"
+                            font.pixelSize: 13
                         }
                     }
 

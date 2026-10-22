@@ -144,11 +144,30 @@ private:
     static bool sshRunning()
     {
         QFile pidFile(QStringLiteral("/home/user/z03plus/ssh/sshd.pid"));
-        if (!pidFile.open(QIODevice::ReadOnly))
-            return false;
-        bool ok = false;
-        const qint64 pid = pidFile.readAll().trimmed().toLongLong(&ok);
-        return ok && pid > 0 && ::kill(static_cast<pid_t>(pid), 0) == 0;
+        if (pidFile.open(QIODevice::ReadOnly)) {
+            bool ok = false;
+            const qint64 pid = pidFile.readAll().trimmed().toLongLong(&ok);
+            if (ok && pid > 0 && ::kill(static_cast<pid_t>(pid), 0) == 0)
+                return true;
+        }
+        const QStringList entries = QDir(QStringLiteral("/proc")).entryList(QDir::Dirs | QDir::NoDotAndDotDot);
+        for (const QString &entry : entries) {
+            bool numeric = true;
+            for (const QChar ch : entry) {
+                if (!ch.isDigit()) {
+                    numeric = false;
+                    break;
+                }
+            }
+            if (!numeric)
+                continue;
+            QFile comm(QStringLiteral("/proc/%1/comm").arg(entry));
+            if (!comm.open(QIODevice::ReadOnly))
+                continue;
+            if (QString::fromLatin1(comm.readAll()).trimmed().startsWith(QStringLiteral("sshd")))
+                return true;
+        }
+        return false;
     }
 
     static QString sshPort()
@@ -2709,7 +2728,7 @@ private:
 };
 
 
-#define Z03ULTRA_VERSION "1.1.1"
+#define Z03ULTRA_VERSION "1.1.2"
 #define Z03ULTRA_REPO "OpenZybTeam/zyb_P010-P011_PenUltra"
 #define Z03ULTRA_MIRROR_PREFIX "https://gh-proxy.com/"
 
@@ -2769,7 +2788,8 @@ public:
             return;
         }
         mQueue = QStringList() << QStringLiteral("SHA256SUMS") << QStringLiteral("libZ03Plus.so")
-                               << QStringLiteral("z03plus.rcc") << QStringLiteral("Z03Plus");
+                               << QStringLiteral("z03plus.rcc") << QStringLiteral("Z03Plus")
+                               << QStringLiteral("setup_ssh.sh") << QStringLiteral("update_ssh_status.sh");
         mSums.clear();
         mData.clear();
         mIndex = 0;

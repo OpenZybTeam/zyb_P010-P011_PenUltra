@@ -14,7 +14,7 @@ for arg in "$@"; do
     esac
 done
 MIRROR_PREFIX="https://gh-proxy.com/"
-FILES="libZ03Plus.so z03plus.rcc Z03Plus"
+FILES="libZ03Plus.so z03plus.rcc Z03Plus setup_ssh.sh update_ssh_status.sh"
 INIT=/etc/init.d/zybz03qt-init
 HOOK_LINE='Z=/home/user/z03plus/Z03Plus; L=/home/user/z03plus/libZ03Plus.so; [ -f "$Z" ] && [ -f "$L" ] && ! grep -q " /usr/bin/Z03 " /proc/mounts && mount --bind "$Z" /usr/bin/Z03'
 
@@ -87,7 +87,7 @@ done
 for f in $FILES; do
     cp -f "$TMP/$f" "$DEST/$f" || die "写入 $DEST/$f 失败"
 done
-chmod 755 "$DEST/libZ03Plus.so" "$DEST/Z03Plus"
+chmod 755 "$DEST/libZ03Plus.so" "$DEST/Z03Plus" "$DEST/setup_ssh.sh" "$DEST/update_ssh_status.sh"
 chmod 644 "$DEST/z03plus.rcc"
 log "文件已安装到 $DEST"
 

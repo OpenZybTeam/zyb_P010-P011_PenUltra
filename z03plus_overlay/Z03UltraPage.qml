@@ -402,11 +402,12 @@ property bool aiHistoryVisible: false
                 if (root.sshRunning === qsTr("已开启")) {
                     sshService.stop()
                     root.showTip(qsTr("正在关闭 SSH 服务"))
-                } else {
-                    sshService.start()
+                } else if (sshService.start()) {
                     root.showTip(qsTr("正在启动 SSH 服务"))
+                } else {
+                    root.showTip(qsTr("启动失败：缺少 SSH 组件，请更新 Z03Ultra"))
                 }
-                sshRefreshTimer.restart()
+                root.refreshSshStatus()
             }
         }
         BasicButton {
@@ -1329,7 +1330,7 @@ property bool aiHistoryVisible: false
 
     function refreshSshStatus() {
         sshService.refresh()
-        sshRefreshAttempts = 2
+        sshRefreshAttempts = 5
         sshRefreshTimer.restart()
     }
 

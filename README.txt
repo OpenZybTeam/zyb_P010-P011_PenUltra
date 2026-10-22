@@ -29,7 +29,7 @@ Z03Ultra 是基于 Z03Plus 扩展项目发展而来的分支，保留其 overlay
 发现新版本后可切换直连/镜像源并直接安装，完成后自动重启界面。
 
 脚本通过管道执行，不落盘。读取 GitHub 最新 Release，校验 SHA256，
-备份旧文件到 /home/user/z03plus/backup/，安装注入库、RCC 与 Z03Plus
+备份旧文件到 /home/user/z03plus/backup/，安装注入库、RCC、Z03Plus 与 SSH 辅助脚本
 副本，写入一行 bind mount 启动钩子，然后重启主界面并检查注入结果。
 
 无法访问 GitHub 时：
