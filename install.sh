@@ -45,8 +45,8 @@ download() {
 
 # 一次 curl 调用下载多个文件，复用同一条 TCP/TLS 连接，避免每个文件重复握手。
 download_many() {
-    curl -fsSL --connect-timeout 15 --max-time 900 --retry 1 --retry-delay 1 "$@" && return 0
-    curl -fsSLk --connect-timeout 15 --max-time 900 --retry 1 --retry-delay 1 "$@" && return 0
+    curl -fL --progress-bar --connect-timeout 15 --max-time 900 --retry 1 --retry-delay 1 "$@" && return 0
+    curl -fLk --progress-bar --connect-timeout 15 --max-time 900 --retry 1 --retry-delay 1 "$@" && return 0
     return 1
 }
 
@@ -102,6 +102,15 @@ done
 chmod 755 "$DEST/libZ03Plus.so" "$DEST/Z03Plus" "$DEST/setup_ssh.sh" "$DEST/update_ssh_status.sh"
 chmod 644 "$DEST/z03plus.rcc"
 log "文件已安装到 $DEST"
+
+if [ -f "$DEST/ssh/sshd_config" ] && [ -f "$DEST/setup_ssh.sh" ]; then
+    log "重新应用 SSH 配置"
+    if [ -s "$DEST/ssh/sshd.pid" ]; then
+        kill "$(cat "$DEST/ssh/sshd.pid")" 2>/dev/null || true
+        rm -f "$DEST/ssh/sshd.pid"
+    fi
+    sh "$DEST/setup_ssh.sh" >/dev/null 2>&1 || log "SSH 配置更新失败，可在 SSH 页手动重启"
+fi
 
 mount -o remount,rw / 2>/dev/null || die "rootfs 无法改为可写"
 if ! grep -q 'mount --bind' "$INIT" 2>/dev/null; then

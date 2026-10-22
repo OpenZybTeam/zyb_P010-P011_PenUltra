@@ -2728,7 +2728,7 @@ private:
 };
 
 
-#define Z03ULTRA_VERSION "1.1.5"
+#define Z03ULTRA_VERSION "1.1.6"
 #define Z03ULTRA_REPO "OpenZybTeam/zyb_P010-P011_PenUltra"
 #define Z03ULTRA_MIRROR_PREFIX "https://gh-proxy.com/"
 
@@ -3102,6 +3102,11 @@ private:
     void restartLater()
     {
         const QString script = QStringLiteral(
+            "if [ -f /home/user/z03plus/ssh/sshd_config ]; then\n"
+            "  kill $(cat /home/user/z03plus/ssh/sshd.pid) 2>/dev/null\n"
+            "  rm -f /home/user/z03plus/ssh/sshd.pid\n"
+            "  sh /home/user/z03plus/setup_ssh.sh >/dev/null 2>&1\n"
+            "fi\n"
             "sleep 2\n"
             "G=$(ps w | grep '[z]yb_z03_launch.sh' | awk '{print $1}' | head -n 1)\n"
             "[ -n \"$G\" ] && kill -STOP \"$G\"\n"
