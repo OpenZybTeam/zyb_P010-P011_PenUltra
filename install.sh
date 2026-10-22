@@ -31,6 +31,11 @@ die() { echo "[z03ultra] $*" >&2; exit 1; }
 [ "$(id -u)" = 0 ] || die "请用 root 执行"
 command -v curl >/dev/null 2>&1 || die "缺少 curl"
 command -v sha256sum >/dev/null 2>&1 || die "缺少 sha256sum"
+
+WGET="wget"
+if wget --help 2>&1 | grep -q -- '--no-check-certificate'; then
+    WGET="wget --no-check-certificate"
+fi
 [ -d "$DEST" ] || mkdir -p "$DEST" || die "无法创建 $DEST"
 
 TMP=${TMPDIR:-/tmp}/z03ultra-install.$$
@@ -38,7 +43,7 @@ mkdir -p "$TMP" || die "无法创建临时目录"
 trap 'rm -rf "$TMP"' EXIT INT TERM
 
 download() {
-    wget -q -T "$3" -O "$2" "$1" 2>/dev/null && return 0
+    $WGET -q -T "$3" -O "$2" "$1" 2>/dev/null && return 0
     curl -fsSL --connect-timeout 15 --max-time "$3" -o "$2" "$1" && return 0
     curl -fsSLk --connect-timeout 15 --max-time "$3" -o "$2" "$1" && return 0
     return 1
@@ -57,7 +62,7 @@ fetch_asset() {
     n=0
     while [ "$n" -lt 5 ]; do
         n=$((n + 1))
-        wget -c -O "$dst" "$src" && return 0
+        $WGET -c -O "$dst" "$src" && return 0
         curl_asset -C - "$src" -o "$dst"
         rc=$?
         [ "$rc" = 0 ] && return 0
@@ -71,7 +76,7 @@ fetch_asset() {
 }
 
 fetch_fresh() {
-    wget -O "$3" "$2" && return 0
+    $WGET -O "$3" "$2" && return 0
     curl_asset "$2" -o "$3" && return 0
     return 1
 }
