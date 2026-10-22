@@ -2728,9 +2728,9 @@ private:
 };
 
 
-#define Z03ULTRA_VERSION "1.2.7"
+#define Z03ULTRA_VERSION "1.2.8"
 #define Z03ULTRA_REPO "OpenZybTeam/zyb_P010-P011_PenUltra"
-#define Z03ULTRA_MIRROR_PREFIX "https://gh.b52m.cn/"
+#define Z03ULTRA_MIRROR_PREFIX "https://git.yylx.win/"
 
 class Z03PlusUpdateService : public QObject
 {

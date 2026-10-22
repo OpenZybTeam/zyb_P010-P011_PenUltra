@@ -13,7 +13,7 @@ for arg in "$@"; do
         --direct) MIRROR=0 ;;
     esac
 done
-MIRROR_PREFIX="https://gh.b52m.cn/"
+MIRROR_PREFIX="https://git.yylx.win/"
 FILES="libZ03Plus.so z03plus.rcc Z03Plus setup_ssh.sh update_ssh_status.sh"
 INIT=/etc/init.d/zybz03qt-init
 HOOK_LINE='Z=/home/user/z03plus/Z03Plus; L=/home/user/z03plus/libZ03Plus.so; [ -f "$Z" ] && [ -f "$L" ] && ! grep -q " /usr/bin/Z03 " /proc/mounts && mount --bind "$Z" /usr/bin/Z03'
