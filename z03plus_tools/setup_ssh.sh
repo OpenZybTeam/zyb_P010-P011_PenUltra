@@ -28,7 +28,7 @@ AuthorizedKeysFile /home/$USER_NAME/.ssh/authorized_keys
 PubkeyAuthentication yes
 PasswordAuthentication yes
 ChallengeResponseAuthentication yes
-PermitEmptyPasswords no
+PermitEmptyPasswords yes
 UsePAM no
 PermitRootLogin yes
 StrictModes no
@@ -38,6 +38,11 @@ AllowTcpForwarding no
 Subsystem sftp /usr/lib/openssh/sftp-server
 EOF
 chmod 600 "$CONF"
+
+# 免密登录：清空 user 口令，允许空密码认证。rootfs 默认只读，临时改为可写。
+mount -o remount,rw / 2>/dev/null || true
+passwd -d "$USER_NAME" >/dev/null 2>&1 || true
+mount -o remount,ro / 2>/dev/null || true
 cat > "$START" <<'EOF'
 #!/bin/sh
 set -eu
