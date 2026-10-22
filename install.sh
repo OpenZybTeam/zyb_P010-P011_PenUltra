@@ -13,7 +13,7 @@ for arg in "$@"; do
         --direct) MIRROR=0 ;;
     esac
 done
-MIRROR_PREFIX="https://gh-proxy.com/"
+MIRROR_PREFIX="https://v4.gh-proxy.org/"
 FILES="libZ03Plus.so z03plus.rcc Z03Plus setup_ssh.sh update_ssh_status.sh"
 INIT=/etc/init.d/zybz03qt-init
 HOOK_LINE='Z=/home/user/z03plus/Z03Plus; L=/home/user/z03plus/libZ03Plus.so; [ -f "$Z" ] && [ -f "$L" ] && ! grep -q " /usr/bin/Z03 " /proc/mounts && mount --bind "$Z" /usr/bin/Z03'
@@ -38,17 +38,17 @@ mkdir -p "$TMP" || die "无法创建临时目录"
 trap 'rm -rf "$TMP"' EXIT INT TERM
 
 download() {
+    wget -q -T "$3" -O "$2" "$1" 2>/dev/null && return 0
     curl -fsSL --connect-timeout 15 --max-time "$3" -o "$2" "$1" && return 0
     curl -fsSLk --connect-timeout 15 --max-time "$3" -o "$2" "$1" && return 0
     return 1
 }
 
 curl_asset() {
-    curl -fL --http1.1 --progress-bar --connect-timeout 15 --max-time 300 \
-        --speed-limit 2048 --speed-time 15 "$@"
+    curl -fLk --http1.1 --progress-bar --connect-timeout 20 "$@"
 }
 
-# 逐个下载并显示进度条。中断后用 Range 续传，卡住超过 15 秒自动断开重试。
+# 逐个下载，wget 断点续传并显示进度；失败时用 curl 续传，不主动断开慢连接。
 fetch_asset() {
     name=$1
     src=$2
@@ -57,22 +57,22 @@ fetch_asset() {
     n=0
     while [ "$n" -lt 5 ]; do
         n=$((n + 1))
-        curl_asset -C - "$src" -o "$dst" && return 0
+        wget -c -O "$dst" "$src" && return 0
+        curl_asset -C - "$src" -o "$dst"
         rc=$?
+        [ "$rc" = 0 ] && return 0
         if [ "$rc" = 33 ] || [ "$rc" = 22 ]; then
             : > "$dst"
-            curl_asset "$src" -o "$dst" && return 0
         fi
-        [ "$n" -lt 5 ] && printf '[z03ultra] %s 中断，续传中（第 %s 次）\n' "$name" "$n"
-        sleep 1
+        [ "$n" -lt 5 ] && printf '[z03ultra] %s 未完成，续传中（第 %s 次）\n' "$name" "$n"
+        sleep 2
     done
     return 1
 }
 
 fetch_fresh() {
+    wget -O "$3" "$2" && return 0
     curl_asset "$2" -o "$3" && return 0
-    curl -fLk --http1.1 --progress-bar --connect-timeout 15 --max-time 300 \
-        --speed-limit 2048 --speed-time 15 "$2" -o "$3" && return 0
     return 1
 }
 

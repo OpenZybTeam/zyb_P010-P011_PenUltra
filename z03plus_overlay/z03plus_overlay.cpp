@@ -2728,9 +2728,9 @@ private:
 };
 
 
-#define Z03ULTRA_VERSION "1.1.9"
+#define Z03ULTRA_VERSION "1.2.0"
 #define Z03ULTRA_REPO "OpenZybTeam/zyb_P010-P011_PenUltra"
-#define Z03ULTRA_MIRROR_PREFIX "https://gh-proxy.com/"
+#define Z03ULTRA_MIRROR_PREFIX "https://v4.gh-proxy.org/"
 
 class Z03PlusUpdateService : public QObject
 {

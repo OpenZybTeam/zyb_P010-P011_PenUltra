@@ -13,7 +13,7 @@ for arg in "$@"; do
 done
 
 BASE="https://github.com/$REPO/releases/latest/download/install.sh"
-[ "$MIRROR" = 1 ] && BASE="https://gh-proxy.com/$BASE"
+[ "$MIRROR" = 1 ] && BASE="https://v4.gh-proxy.org/$BASE"
 
 log() { echo "[z03ultra] $*"; }
 die() { echo "[z03ultra] $*" >&2; exit 1; }
@@ -21,9 +21,11 @@ die() { echo "[z03ultra] $*" >&2; exit 1; }
 command -v curl >/dev/null 2>&1 || die "缺少 curl"
 
 log "更新源: $( [ "$MIRROR" = 1 ] && echo 镜像 || echo 直连 )"
-SCRIPT=$(curl -fL --progress-bar --connect-timeout 15 "$BASE") \
-    || SCRIPT=$(curl -fLk --progress-bar --connect-timeout 15 "$BASE") \
+TMPF=$(mktemp /tmp/z03ultra-update.XXXXXX) || die "无法创建临时文件"
+trap 'rm -f "$TMPF"' EXIT INT TERM
+wget -O "$TMPF" "$BASE" \
+    || curl -fLk --http1.1 --progress-bar --connect-timeout 20 "$BASE" -o "$TMPF" \
     || die "下载安装脚本失败，可改用 --direct/--mirror 重试"
-[ -n "$SCRIPT" ] || die "安装脚本内容为空"
+[ -s "$TMPF" ] || die "安装脚本内容为空"
 
-printf '%s\n' "$SCRIPT" | sh -s -- "$@"
+sh "$TMPF" "$@"

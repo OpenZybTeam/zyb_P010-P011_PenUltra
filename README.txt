@@ -17,7 +17,7 @@ Z03Ultra 是基于 Z03Plus 扩展项目发展而来的分支，保留其 overlay
     # 直连
     curl -fsSL https://github.com/OpenZybTeam/zyb_P010-P011_PenUltra/releases/latest/download/install.sh | sh
 
-    # 镜像（gh-proxy.com）
+    # 镜像（v4.gh-proxy.org）
     curl -fsSL https://github.com/OpenZybTeam/zyb_P010-P011_PenUltra/releases/latest/download/install.sh | sh -s -- --mirror
 
 一键更新：
