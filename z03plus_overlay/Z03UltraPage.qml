@@ -18,7 +18,8 @@ Rectangle {
     property bool baseLandscape: width > height
     property bool effectiveLandscape: baseLandscape ? !portraitMode : portraitMode
     property bool contentRotated: effectiveLandscape !== baseLandscape
-    property real tileWidth: (featureList.width - 12 * (featureGrid.columns - 1)) / featureGrid.columns
+    property int gridColumns: effectiveLandscape ? 3 : 1
+    property real tileWidth: (featureList.width - 12 * (gridColumns - 1)) / gridColumns
     property bool sshPageVisible: false
     property bool fileManagerVisible: false
     property bool readerVisible: false
@@ -31,6 +32,10 @@ Rectangle {
     property bool deviceInfoPageVisible: false
     property bool browserPageVisible: false
     property bool aboutPageVisible: false
+    property bool transferPageVisible: false
+    property bool appsPageVisible: false
+    property bool notesPageVisible: false
+    property bool systemPageVisible: false
     property string sshRunning: "未知"
     property string sshIp: "正在读取…"
     property string sshPort: "22"
@@ -208,93 +213,157 @@ property bool aiHistoryVisible: false
         anchors.bottomMargin: 12
         clip: true
         contentWidth: width
-        contentHeight: featureGrid.height + 10
+        contentHeight: featuresColumn.childrenRect.height + 8
         flickableDirection: Flickable.VerticalFlick
 
-        Grid {
-            id: featureGrid
+        Column {
+            id: featuresColumn
             width: featureList.width
-            columns: root.effectiveLandscape ? 3 : 1
-            rowSpacing: 12
-            columnSpacing: 12
+            spacing: 10
 
-            MaterialTile {
-                width: root.tileWidth
-                text: qsTr("文件管理")
-                onClicked: { root.openFiles(""); root.fileManagerVisible = true }
-                accent: "#4C8DFF"
+            Text {
+                width: parent.width
+                text: qsTr("Z03ULTRA")
+                color: "#6F7178"
+                font.pixelSize: 10
+                font.letterSpacing: 1.5
+                font.weight: Font.DemiBold
+                topPadding: 4
             }
-            MaterialTile {
-                width: root.tileWidth
-                text: qsTr("文本阅读")
-                onClicked: { root.openFiles(""); root.fileManagerVisible = true }
-                accent: "#3DDC97"
+
+            Grid {
+                id: featureGrid
+                width: parent.width
+                columns: root.gridColumns
+                spacing: root.gridColumns > 1 ? 10 : 8
+
+                MaterialTile {
+                    width: root.tileWidth
+                    text: qsTr("浏览器")
+                    subtitle: qsTr("内置 WebKit 引擎")
+                    accent: "#4C8DFF"
+                    onClicked: root.browserPageVisible = true
+                }
+                MaterialTile {
+                    width: root.tileWidth
+                    text: qsTr("手机互传")
+                    subtitle: qsTr("同一 Wi-Fi 上传下载")
+                    accent: "#2AC7A4"
+                    onClicked: root.transferPageVisible = true
+                }
+                MaterialTile {
+                    width: root.tileWidth
+                    text: qsTr("手写便签")
+                    subtitle: qsTr("画笔记录，导出 PNG")
+                    accent: "#F2B34C"
+                    onClicked: root.notesPageVisible = true
+                }
+                MaterialTile {
+                    width: root.tileWidth
+                    text: qsTr("应用启动器")
+                    subtitle: qsTr("Nix 与系统应用")
+                    accent: "#8E7BFF"
+                    onClicked: root.appsPageVisible = true
+                }
+                MaterialTile {
+                    width: root.tileWidth
+                    text: qsTr("系统控制")
+                    subtitle: qsTr("亮度 音量 电量 性能")
+                    accent: "#FF7A85"
+                    onClicked: root.systemPageVisible = true
+                }
             }
-            MaterialTile {
-                width: root.tileWidth
-                text: qsTr("存储空间")
-                onClicked: root.storagePageVisible = true
-                accent: "#FFB454"
+
+            Text {
+                width: parent.width
+                text: qsTr("设置与管理")
+                color: "#6F7178"
+                font.pixelSize: 10
+                font.letterSpacing: 1.5
+                font.weight: Font.DemiBold
+                topPadding: 8
             }
-            MaterialTile {
-                width: root.tileWidth
-                text: qsTr("AI 对话")
-                onClicked: root.openAi()
-                accent: "#B388FF"
-            }
-            MaterialTile {
-                width: root.tileWidth
-                text: qsTr("显示与灯光")
-                onClicked: root.openDisplayPage()
-                accent: "#4DD0E1"
-            }
-            MaterialTile {
-                width: root.tileWidth
-                text: qsTr("ADB / SSH")
-                onClicked: { root.sshPageVisible = true; root.refreshSshStatus() }
-                accent: "#FF7597"
-            }
-            MaterialTile {
-                width: root.tileWidth
-                text: qsTr("音乐播放器")
-                onClicked: root.musicPageVisible = true
-                accent: "#8BC34A"
-            }
-            MaterialTile {
-                width: root.tileWidth
-                text: qsTr("录音")
-                onClicked: root.recorderPageVisible = true
-                accent: "#FFD54F"
-            }
-            MaterialTile {
-                width: root.tileWidth
-                text: qsTr("终端 Shell")
-                onClicked: root.shellPageVisible = true
-                accent: "#4C8DFF"
-            }
-            MaterialTile {
-                width: root.tileWidth
-                text: qsTr("应用商店")
-                onClicked: root.nixPageVisible = true
-                accent: "#3DDC97"
-            }
-            MaterialTile {
-                width: root.tileWidth
-                text: qsTr("网页浏览")
-                onClicked: root.browserPageVisible = true
-                accent: "#FFB454"
-            }
-            MaterialTile {
-                width: root.tileWidth
-                text: qsTr("关于设备")
-                onClicked: root.deviceInfoPageVisible = true
-                accent: "#B388FF"
-            }
-            MaterialTile {
-                width: root.tileWidth
-                text: qsTr("关于 Z03Ultra")
-                onClicked: root.aboutPageVisible = true
-                accent: "#4DD0E1"
+
+            Grid {
+                id: settingGrid
+                width: parent.width
+                columns: root.gridColumns
+                spacing: root.gridColumns > 1 ? 10 : 8
+
+                MaterialTile {
+                    width: root.tileWidth
+                    text: qsTr("文件管理")
+                    subtitle: qsTr("浏览、上传与整理")
+                    accent: "#2AC7A4"
+                    onClicked: root.fileManagerVisible = true
+                }
+                MaterialTile {
+                    width: root.tileWidth
+                    text: qsTr("终端")
+                    subtitle: qsTr("本地 Shell")
+                    accent: "#8E9099"
+                    onClicked: root.shellPageVisible = true
+                }
+                MaterialTile {
+                    width: root.tileWidth
+                    text: qsTr("在线音乐")
+                    subtitle: qsTr("搜索与播放")
+                    accent: "#FF7A85"
+                    onClicked: root.musicPageVisible = true
+                }
+                MaterialTile {
+                    width: root.tileWidth
+                    text: qsTr("录音机")
+                    subtitle: qsTr("麦克风录音")
+                    accent: "#F2B34C"
+                    onClicked: root.recorderPageVisible = true
+                }
+                MaterialTile {
+                    width: root.tileWidth
+                    text: qsTr("存储空间")
+                    subtitle: qsTr("磁盘占用与清理")
+                    accent: "#4C8DFF"
+                    onClicked: root.storagePageVisible = true
+                }
+                MaterialTile {
+                    width: root.tileWidth
+                    text: qsTr("Nix 商店")
+                    subtitle: qsTr("搜索与安装软件包")
+                    accent: "#2AC7A4"
+                    onClicked: root.nixStorePageVisible = true
+                }
+                MaterialTile {
+                    width: root.tileWidth
+                    text: qsTr("超时设置")
+                    subtitle: qsTr("屏幕休眠时间")
+                    accent: "#8E7BFF"
+                    onClicked: root.screenTimeoutPageVisible = true
+                }
+                MaterialTile {
+                    width: root.tileWidth
+                    text: qsTr("设备信息")
+                    subtitle: qsTr("硬件与系统版本")
+                    accent: "#4C8DFF"
+                    onClicked: root.deviceInfoPageVisible = true
+                }
+                MaterialTile {
+                    width: root.tileWidth
+                    text: qsTr("文本阅读")
+                    subtitle: qsTr("打开 txt 文档")
+                    accent: "#8E9099"
+                    onClicked: {
+                        fileManagerModel.path = "/home/user"
+                        fileManagerModel.textMode = true
+                        root.fileManagerVisible = true
+                    }
+                }
+                MaterialTile {
+                    width: root.tileWidth
+                    text: qsTr("关于 Z03Ultra")
+                    subtitle: qsTr("版本、更新与许可")
+                    accent: "#F2B34C"
+                    onClicked: root.aboutPageVisible = true
+                }
             }
         }
     }

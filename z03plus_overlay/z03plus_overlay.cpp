@@ -4,6 +4,7 @@
 #include <QDateTime>
 #include <QDir>
 #include <QDirIterator>
+#include <QDirIterator>
 #include <QFile>
 #include <QFileInfo>
 #include <QHash>
@@ -2728,7 +2729,7 @@ private:
 };
 
 
-#define Z03ULTRA_VERSION "1.2.9"
+#define Z03ULTRA_VERSION "1.3.0"
 #define Z03ULTRA_REPO "OpenZybTeam/zyb_P010-P011_PenUltra"
 #define Z03ULTRA_MIRROR_PREFIX "https://git.yylx.win/"
 
@@ -3172,6 +3173,732 @@ private:
     bool mDirectOnly = false;
 };
 
+class Z03PlusTransferService : public QObject
+{
+    Q_OBJECT
+    Q_PROPERTY(bool running READ running NOTIFY changed)
+    Q_PROPERTY(QString url READ url NOTIFY changed)
+    Q_PROPERTY(QString status READ status NOTIFY changed)
+public:
+    explicit Z03PlusTransferService(QObject *parent = nullptr) : QObject(parent)
+    {
+        mDir = QStringLiteral("/home/user/z03plus/transfer");
+        QDir().mkpath(mDir);
+        connect(&mServer, &QTcpServer::newConnection, this, &Z03PlusTransferService::onNewConnection);
+    }
+
+    ~Z03PlusTransferService() override { stop(); }
+
+    bool running() const { return mServer.isListening(); }
+    QString url() const
+    {
+        if (!mServer.isListening())
+            return QString();
+        return QStringLiteral("http://%1:%2").arg(localAddress()).arg(mServer.serverPort());
+    }
+    QString status() const { return mStatus; }
+
+    Q_INVOKABLE bool start()
+    {
+        if (mServer.isListening())
+            return true;
+        for (int port = 8899; port <= 8910; ++port) {
+            if (mServer.listen(QHostAddress::Any, static_cast<quint16>(port))) {
+                mStatus = QStringLiteral("已开启，等待手机访问");
+                emit changed();
+                return true;
+            }
+        }
+        mStatus = QStringLiteral("端口被占用，无法启动");
+        emit changed();
+        return false;
+    }
+
+    Q_INVOKABLE void stop()
+    {
+        const QList<QTcpSocket *> sockets = mBuffers.keys();
+        for (QTcpSocket *socket : sockets) {
+            socket->disconnectFromHost();
+            socket->deleteLater();
+        }
+        mBuffers.clear();
+        mExpected.clear();
+        if (mServer.isListening())
+            mServer.close();
+        mStatus = QStringLiteral("已关闭");
+        emit changed();
+    }
+
+    Q_INVOKABLE QVariantList listFiles() const
+    {
+        QVariantList out;
+        const QFileInfoList entries = QDir(mDir).entryInfoList(QDir::Files, QDir::Time);
+        for (const QFileInfo &info : entries) {
+            QVariantMap item;
+            item.insert(QStringLiteral("name"), info.fileName());
+            item.insert(QStringLiteral("size"), info.size());
+            item.insert(QStringLiteral("modified"), info.lastModified().toString(QStringLiteral("MM-dd HH:mm")));
+            out.append(item);
+        }
+        return out;
+    }
+
+    Q_INVOKABLE bool removeFile(const QString &name)
+    {
+        const QFileInfo info(QDir(mDir).filePath(QFileInfo(name).fileName()));
+        if (!info.exists() || !info.isFile())
+            return false;
+        const bool ok = QFile::remove(info.filePath());
+        emit changed();
+        return ok;
+    }
+
+    Q_INVOKABLE QString directory() const { return mDir; }
+
+signals:
+    void changed();
+
+private:
+    QString localAddress() const
+    {
+        const QList<QNetworkInterface> interfaces = QNetworkInterface::allInterfaces();
+        for (const QNetworkInterface &iface : interfaces) {
+            if (!(iface.flags() & QNetworkInterface::IsUp) || (iface.flags() & QNetworkInterface::IsLoopBack))
+                continue;
+            const QList<QNetworkAddressEntry> entries = iface.addressEntries();
+            for (const QNetworkAddressEntry &entry : entries) {
+                const QHostAddress address = entry.ip();
+                if (address.protocol() == QAbstractSocket::IPv4Protocol && !address.isLoopback())
+                    return address.toString();
+            }
+        }
+        return QStringLiteral("127.0.0.1");
+    }
+
+    void onNewConnection()
+    {
+        while (mServer.hasPendingConnections()) {
+            QTcpSocket *socket = mServer.nextPendingConnection();
+            mBuffers.insert(socket, QByteArray());
+            connect(socket, &QTcpSocket::readyRead, this, [this, socket]() { onReadyRead(socket); });
+            connect(socket, &QTcpSocket::disconnected, this, [this, socket]() {
+                mBuffers.remove(socket);
+                mExpected.remove(socket);
+                socket->deleteLater();
+            });
+        }
+    }
+
+    void onReadyRead(QTcpSocket *socket)
+    {
+        QByteArray &buffer = mBuffers[socket];
+        buffer += socket->readAll();
+        const int headerEnd = buffer.indexOf("\r\n\r\n");
+        if (headerEnd < 0)
+            return;
+        const QByteArray headers = buffer.left(headerEnd);
+        int expected = 0;
+        const QByteArray lengthValue = headerValue(headers, "content-length");
+        if (!lengthValue.isEmpty())
+            expected = lengthValue.toInt();
+        const int total = headerEnd + 4 + expected;
+        if (buffer.size() < total)
+            return;
+
+        const QByteArray requestLine = headers.left(headers.indexOf("\r\n"));
+        const QList<QByteArray> parts = requestLine.split(' ');
+        const QByteArray method = parts.value(0);
+        QByteArray path = parts.value(1);
+        const int query = path.indexOf('?');
+        QByteArray queryText;
+        if (query >= 0) {
+            queryText = path.mid(query + 1);
+            path = path.left(query);
+        }
+        const QByteArray body = buffer.mid(headerEnd + 4, expected);
+        buffer.clear();
+
+        if (method == "GET" && path == "/") {
+            respond(socket, pageHtml());
+        } else if (method == "GET" && path == "/download") {
+            const QString name = QFileInfo(QUrl::fromPercentEncoding(queryText)).fileName();
+            sendFile(socket, name);
+        } else if (method == "POST" && path == "/upload") {
+            const int saved = saveMultipart(headers, body);
+            mStatus = saved > 0 ? QStringLiteral("接收了 %1 个文件").arg(saved)
+                                : QStringLiteral("上传失败或没有文件");
+            emit changed();
+            respond(socket, pageHtml());
+        } else {
+            respond(socket, QStringLiteral("<!doctype html><meta charset='utf-8'><p>Not found"),
+                    QByteArrayLiteral("404 Not Found"));
+        }
+    }
+
+    static QByteArray headerValue(const QByteArray &headers, const QByteArray &key)
+    {
+        const QList<QByteArray> lines = headers.split('\n');
+        for (const QByteArray &raw : lines) {
+            const QByteArray line = raw.trimmed();
+            const int colon = line.indexOf(':');
+            if (colon <= 0)
+                continue;
+            if (line.left(colon).trimmed().toLower() == key)
+                return line.mid(colon + 1).trimmed();
+        }
+        return QByteArray();
+    }
+
+    void respond(QTcpSocket *socket, const QString &html, const QByteArray &code = QByteArrayLiteral("200 OK"))
+    {
+        const QByteArray body = html.toUtf8();
+        QByteArray reply = "HTTP/1.1 ";
+        reply += code;
+        reply += "\r\nContent-Type: text/html; charset=utf-8\r\nConnection: close\r\nContent-Length: ";
+        reply += QByteArray::number(body.size());
+        reply += "\r\n\r\n";
+        reply += body;
+        socket->write(reply);
+        socket->disconnectFromHost();
+    }
+
+    void sendFile(QTcpSocket *socket, const QString &name)
+    {
+        QFile file(QDir(mDir).filePath(name));
+        if (!file.open(QIODevice::ReadOnly)) {
+            respond(socket, QStringLiteral("<!doctype html><meta charset='utf-8'><p>文件不存在"),
+                    QByteArrayLiteral("404 Not Found"));
+            return;
+        }
+        const QByteArray data = file.readAll();
+        file.close();
+        QByteArray reply = "HTTP/1.1 200 OK\r\nContent-Type: application/octet-stream\r\nContent-Disposition: attachment; filename=\"";
+        reply += name.toUtf8();
+        reply += "\"\r\nConnection: close\r\nContent-Length: ";
+        reply += QByteArray::number(data.size());
+        reply += "\r\n\r\n";
+        socket->write(reply);
+        socket->write(data);
+        socket->disconnectFromHost();
+    }
+
+    int saveMultipart(const QByteArray &headers, const QByteArray &body)
+    {
+        const QByteArray type = headerValue(headers, "content-type");
+        const int boundaryAt = type.indexOf("boundary=");
+        if (boundaryAt < 0)
+            return 0;
+        QByteArray boundary = type.mid(boundaryAt + 9).trimmed();
+        if (boundary.startsWith('"') && boundary.endsWith('"'))
+            boundary = boundary.mid(1, boundary.size() - 2);
+        const QByteArray delimiter = "--" + boundary;
+        int saved = 0;
+        int pos = body.indexOf(delimiter);
+        while (pos >= 0) {
+            const int start = pos + delimiter.size();
+            if (body.mid(start, 2) == "--")
+                break;
+            const int headersEnd = body.indexOf("\r\n\r\n", start);
+            if (headersEnd < 0)
+                break;
+            const int next = body.indexOf(delimiter, headersEnd);
+            if (next < 0)
+                break;
+            QByteArray partHeaders = body.mid(start, headersEnd - start);
+            QByteArray partBody = body.mid(headersEnd + 4, next - headersEnd - 4);
+            if (partBody.endsWith("\r\n"))
+                partBody.chop(2);
+            const QByteArray disposition = headerValue(partHeaders, "content-disposition");
+            const int fileAt = disposition.indexOf("filename=\"");
+            if (fileAt >= 0) {
+                const int nameEnd = disposition.indexOf('"', fileAt + 10);
+                QByteArray raw = disposition.mid(fileAt + 10, nameEnd - fileAt - 10);
+                QString name = QFileInfo(QString::fromUtf8(raw)).fileName();
+                if (name.isEmpty())
+                    name = QStringLiteral("upload-%1.bin").arg(QDateTime::currentMSecsSinceEpoch());
+                QFile out(QDir(mDir).filePath(name));
+                if (out.open(QIODevice::WriteOnly)) {
+                    out.write(partBody);
+                    out.close();
+                    ++saved;
+                }
+            }
+            pos = next;
+        }
+        return saved;
+    }
+
+    QString pageHtml() const
+    {
+        QString rows;
+        const QVariantList files = listFiles();
+        for (const QVariant &entry : files) {
+            const QVariantMap item = entry.toMap();
+            const QString name = item.value(QStringLiteral("name")).toString();
+            rows += QStringLiteral("<li><a href='/download?") + name + QStringLiteral("'>")
+                    + name.toHtmlEscaped() + QStringLiteral("</a><span>")
+                    + QString::number(item.value(QStringLiteral("size")).toLongLong() / 1024.0, 'f', 1)
+                    + QStringLiteral(" KB · ") + item.value(QStringLiteral("modified")).toString()
+                    + QStringLiteral("</span></li>");
+        }
+        if (rows.isEmpty())
+            rows = QStringLiteral("<li class='empty'>暂无文件</li>");
+        return QStringLiteral(
+            "<!doctype html><html><head><meta charset='utf-8'>"
+            "<meta name='viewport' content='width=device-width,initial-scale=1'>"
+            "<title>Z03Ultra 互传</title><style>"
+            "body{font-family:system-ui,sans-serif;background:#0f1115;color:#e8eaed;margin:0;padding:18px}"
+            "h1{font-size:19px;margin:0 0 4px}p{color:#9aa0a6;font-size:13px;margin:0 0 16px}"
+            "form{background:#171a21;border:1px solid #2b2f38;border-radius:12px;padding:14px;margin-bottom:18px}"
+            "input[type=file]{width:100%;color:#cfd3d8;margin-bottom:12px}"
+            "button{width:100%;padding:11px;border:0;border-radius:9px;background:#2fa98d;color:#fff;font-size:15px}"
+            "ul{list-style:none;padding:0;margin:0}li{display:flex;justify-content:space-between;gap:10px;"
+            "padding:11px 4px;border-bottom:1px solid #23262d;font-size:14px}"
+            "li a{color:#7fd8c8;text-decoration:none;word-break:break-all}li span{color:#9aa0a6;font-size:12px;white-space:nowrap}"
+            ".empty{color:#9aa0a6}</style></head><body>"
+            "<h1>Z03Ultra 手机互传</h1><p>选择文件上传到设备 /home/user/z03plus/transfer</p>"
+            "<form method='post' action='/upload' enctype='multipart/form-data'>"
+            "<input type='file' name='file' multiple><button type='submit'>上传</button></form>"
+            "<ul>") + rows + QStringLiteral("</ul></body></html>");
+    }
+
+    QTcpServer mServer;
+    QHash<QTcpSocket *, QByteArray> mBuffers;
+    QHash<QTcpSocket *, int> mExpected;
+    QString mDir;
+    QString mStatus = QStringLiteral("未开启");
+};
+
+class Z03PlusAppService : public QObject
+{
+    Q_OBJECT
+public:
+    explicit Z03PlusAppService(QObject *parent = nullptr) : QObject(parent) {}
+
+    Q_INVOKABLE QVariantList apps() const
+    {
+        QVariantList out;
+        QStringList seen;
+        const QStringList dirs = QStringList()
+            << QStringLiteral("/home/user/.nix-profile/share/applications")
+            << QStringLiteral("/nix/var/nix/profiles/default/share/applications")
+            << QStringLiteral("/usr/share/applications");
+        for (const QString &dirPath : dirs) {
+            QDir dir(dirPath);
+            const QFileInfoList files = dir.entryInfoList(QStringList() << QStringLiteral("*.desktop"), QDir::Files);
+            for (const QFileInfo &info : files) {
+                QFile file(info.filePath());
+                if (!file.open(QIODevice::ReadOnly))
+                    continue;
+                const QString text = QString::fromUtf8(file.readAll());
+                file.close();
+                QString name;
+                QString exec;
+                QString icon;
+                QString comment;
+                bool hidden = false;
+                bool inEntry = false;
+                const QStringList lines = z03SplitChar(text, QChar('\n'));
+                for (const QString &line : lines) {
+                    const QString trimmed = line.trimmed();
+                    if (trimmed == QStringLiteral("[Desktop Entry]")) {
+                        inEntry = true;
+                        continue;
+                    }
+                    if (trimmed.startsWith(QLatin1Char('[')) && trimmed != QStringLiteral("[Desktop Entry]")) {
+                        if (inEntry)
+                            break;
+                        continue;
+                    }
+                    if (!inEntry)
+                        continue;
+                    if (trimmed.startsWith(QStringLiteral("Name=")))
+                        name = trimmed.mid(5).trimmed();
+                    else if (trimmed.startsWith(QStringLiteral("Exec=")))
+                        exec = trimmed.mid(5).trimmed();
+                    else if (trimmed.startsWith(QStringLiteral("Icon=")))
+                        icon = trimmed.mid(5).trimmed();
+                    else if (trimmed.startsWith(QStringLiteral("Comment=")))
+                        comment = trimmed.mid(8).trimmed();
+                    else if (trimmed == QStringLiteral("NoDisplay=true") || trimmed == QStringLiteral("Hidden=true"))
+                        hidden = true;
+                }
+                if (hidden || name.isEmpty() || exec.isEmpty() || seen.contains(name))
+                    continue;
+                seen.append(name);
+                QVariantMap item;
+                item.insert(QStringLiteral("name"), name);
+                item.insert(QStringLiteral("exec"), exec);
+                item.insert(QStringLiteral("comment"), comment);
+                item.insert(QStringLiteral("icon"), resolveIcon(icon));
+                out.append(item);
+            }
+        }
+        std::sort(out.begin(), out.end(), [](const QVariant &a, const QVariant &b) {
+            return a.toMap().value(QStringLiteral("name")).toString().toLower()
+                 < b.toMap().value(QStringLiteral("name")).toString().toLower();
+        });
+        return out;
+    }
+
+    Q_INVOKABLE QVariantMap launch(const QString &exec)
+    {
+        QVariantMap result;
+        QString command = exec;
+        static const QStringList codes = QStringList()
+            << QStringLiteral("%f") << QStringLiteral("%F") << QStringLiteral("%u") << QStringLiteral("%U")
+            << QStringLiteral("%i") << QStringLiteral("%c") << QStringLiteral("%k") << QStringLiteral("%d")
+            << QStringLiteral("%D") << QStringLiteral("%n") << QStringLiteral("%N") << QStringLiteral("%v")
+            << QStringLiteral("%m");
+        for (const QString &code : codes)
+            command.remove(code);
+        command = command.trimmed();
+        if (command.isEmpty()) {
+            result.insert(QStringLiteral("ok"), false);
+            result.insert(QStringLiteral("message"), QStringLiteral("启动命令为空"));
+            return result;
+        }
+        const QString script = QStringLiteral("HOME=/home/user XDG_RUNTIME_DIR=/run/user/0 ")
+            + command + QStringLiteral(" >/dev/null 2>&1 &");
+        const bool ok = QProcess::startDetached(QStringLiteral("/bin/sh"), QStringList() << QStringLiteral("-c") << script);
+        result.insert(QStringLiteral("ok"), ok);
+        result.insert(QStringLiteral("message"), ok ? QStringLiteral("已启动") : QStringLiteral("启动失败"));
+        return result;
+    }
+
+private:
+    static QString resolveIcon(const QString &icon)
+    {
+        if (icon.isEmpty())
+            return QString();
+        if (icon.startsWith(QLatin1Char('/')))
+            return QFile::exists(icon) ? QStringLiteral("file://") + icon : QString();
+        const QStringList roots = QStringList()
+            << QStringLiteral("/home/user/.nix-profile/share/icons")
+            << QStringLiteral("/nix/var/nix/profiles/default/share/icons")
+            << QStringLiteral("/usr/share/icons")
+            << QStringLiteral("/usr/share/pixmaps");
+        for (const QString &root : roots) {
+            QDirIterator it(root, QDir::Files, QDirIterator::Subdirectories);
+            const QString plain = icon + QStringLiteral(".png");
+            const QString svg = icon + QStringLiteral(".svg");
+            while (it.hasNext()) {
+                const QString path = it.next();
+                if (path.endsWith(QLatin1Char('/') + plain) || path.endsWith(QLatin1Char('/') + svg))
+                    return QStringLiteral("file://") + path;
+            }
+        }
+        return QString();
+    }
+};
+
+class Z03PlusSystemService : public QObject
+{
+    Q_OBJECT
+    Q_PROPERTY(int brightness READ brightness NOTIFY changed)
+    Q_PROPERTY(int maxBrightness READ maxBrightness NOTIFY changed)
+    Q_PROPERTY(int volume READ volume NOTIFY changed)
+    Q_PROPERTY(int battery READ battery NOTIFY changed)
+    Q_PROPERTY(QString batteryStatus READ batteryStatus NOTIFY changed)
+    Q_PROPERTY(QString batteryDetail READ batteryDetail NOTIFY changed)
+    Q_PROPERTY(QString governor READ governor NOTIFY changed)
+    Q_PROPERTY(QStringList governors READ governors NOTIFY changed)
+    Q_PROPERTY(QString cpuTemp READ cpuTemp NOTIFY changed)
+    Q_PROPERTY(QString memoryText READ memoryText NOTIFY changed)
+    Q_PROPERTY(QString status READ status NOTIFY changed)
+    Q_PROPERTY(bool volumeAvailable READ volumeAvailable NOTIFY changed)
+public:
+    explicit Z03PlusSystemService(QObject *parent = nullptr) : QObject(parent) { refresh(); }
+
+    int brightness() const { return mBrightness; }
+    int maxBrightness() const { return mMaxBrightness; }
+    int volume() const { return mVolume; }
+    int battery() const { return mBattery; }
+    QString batteryStatus() const { return mBatteryStatus; }
+    QString batteryDetail() const { return mBatteryDetail; }
+    QString governor() const { return mGovernor; }
+    QStringList governors() const { return mGovernors; }
+    QString cpuTemp() const { return mCpuTemp; }
+    QString memoryText() const { return mMemoryText; }
+    QString status() const { return mStatus; }
+    bool volumeAvailable() const { return mVolumeAvailable; }
+
+    Q_INVOKABLE void refresh()
+    {
+        locateBrightness();
+        if (!mBrightnessPath.isEmpty()) {
+            mBrightness = readInt(mBrightnessPath, mBrightness);
+            mMaxBrightness = qMax(1, readInt(mMaxPath, mMaxBrightness));
+        }
+        mVolumeAvailable = false;
+        QProcess mixer;
+        mixer.start(QStringLiteral("/bin/sh"), QStringList() << QStringLiteral("-c")
+                    << QStringLiteral("command -v amixer >/dev/null 2>&1 && amixer sget Master 2>/dev/null | sed -n 's/.*\\[\\([0-9]*\\)%\\].*/\\1/p' | head -n 1"));
+        if (mixer.waitForFinished(1500)) {
+            const QString out = QString::fromLatin1(mixer.readAllStandardOutput()).trimmed();
+            if (!out.isEmpty()) {
+                mVolume = out.toInt();
+                mVolumeAvailable = true;
+            }
+        }
+        readBattery();
+        readGovernor();
+        readTemperature();
+        readMemory();
+        emit changed();
+    }
+
+    Q_INVOKABLE bool setBrightness(int value)
+    {
+        if (mBrightnessPath.isEmpty())
+            return false;
+        value = qBound(1, value, mMaxBrightness);
+        if (!writeText(mBrightnessPath, QString::number(value))) {
+            mStatus = QStringLiteral("无法写入亮度节点");
+            emit changed();
+            return false;
+        }
+        mBrightness = value;
+        mStatus = QStringLiteral("亮度已调整");
+        emit changed();
+        return true;
+    }
+
+    Q_INVOKABLE bool setVolume(int value)
+    {
+        if (!mVolumeAvailable)
+            return false;
+        value = qBound(0, value, 100);
+        QProcess mixer;
+        mixer.start(QStringLiteral("/bin/sh"), QStringList() << QStringLiteral("-c")
+                    << QStringLiteral("amixer sset Master %1% >/dev/null 2>&1").arg(value));
+        if (!mixer.waitForFinished(2000) || mixer.exitCode() != 0)
+            return false;
+        mVolume = value;
+        emit changed();
+        return true;
+    }
+
+    Q_INVOKABLE bool setGovernor(const QString &name)
+    {
+        if (mGovernorPath.isEmpty() || !mGovernors.contains(name))
+            return false;
+        if (!writeText(mGovernorPath, name))
+            return false;
+        mGovernor = name;
+        mStatus = QStringLiteral("性能模式：") + name;
+        emit changed();
+        return true;
+    }
+
+    Q_INVOKABLE bool reboot() { return QProcess::startDetached(QStringLiteral("/sbin/reboot"), QStringList()); }
+    Q_INVOKABLE bool poweroff() { return QProcess::startDetached(QStringLiteral("/sbin/poweroff"), QStringList()); }
+
+signals:
+    void changed();
+
+private:
+    static int readInt(const QString &path, int fallback)
+    {
+        QFile file(path);
+        if (!file.open(QIODevice::ReadOnly))
+            return fallback;
+        const QString text = QString::fromLatin1(file.readAll()).trimmed();
+        file.close();
+        bool ok = false;
+        const int value = text.toInt(&ok);
+        return ok ? value : fallback;
+    }
+
+    static bool writeText(const QString &path, const QString &text)
+    {
+        QFile file(path);
+        if (!file.open(QIODevice::WriteOnly))
+            return false;
+        const bool ok = file.write(text.toLatin1()) > 0;
+        file.close();
+        return ok;
+    }
+
+    void locateBrightness()
+    {
+        if (!mBrightnessPath.isEmpty())
+            return;
+        QDir backlight(QStringLiteral("/sys/class/backlight"));
+        const QStringList devices = backlight.entryList(QDir::Dirs | QDir::NoDotAndDotDot);
+        if (devices.isEmpty())
+            return;
+        const QString base = backlight.filePath(devices.first());
+        mBrightnessPath = base + QStringLiteral("/brightness");
+        mMaxPath = base + QStringLiteral("/max_brightness");
+        mBrightness = readInt(mBrightnessPath, 0);
+        mMaxBrightness = qMax(1, readInt(mMaxPath, 255));
+    }
+
+    void readBattery()
+    {
+        QDir supply(QStringLiteral("/sys/class/power_supply"));
+        const QStringList names = supply.entryList(QDir::Dirs | QDir::NoDotAndDotDot);
+        for (const QString &name : names) {
+            const QString base = supply.filePath(name);
+            QFile type(base + QStringLiteral("/type"));
+            if (!type.open(QIODevice::ReadOnly))
+                continue;
+            const QString kind = QString::fromLatin1(type.readAll()).trimmed();
+            type.close();
+            if (kind != QStringLiteral("Battery"))
+                continue;
+            mBattery = readInt(base + QStringLiteral("/capacity"), mBattery);
+            QFile status(base + QStringLiteral("/status"));
+            if (status.open(QIODevice::ReadOnly)) {
+                mBatteryStatus = QString::fromLatin1(status.readAll()).trimmed();
+                status.close();
+            }
+            const int voltage = readInt(base + QStringLiteral("/voltage_now"), 0) / 1000;
+            const int temp = readInt(base + QStringLiteral("/temp"), 0) / 10;
+            QStringList detail;
+            if (voltage > 0)
+                detail << QStringLiteral("%1 mV").arg(voltage);
+            if (temp > 0)
+                detail << QStringLiteral("%1 ℃").arg(temp);
+            mBatteryDetail = detail.join(QStringLiteral(" · "));
+            return;
+        }
+    }
+
+    void readGovernor()
+    {
+        const QString base = QStringLiteral("/sys/devices/system/cpu/cpu0/cpufreq");
+        mGovernorPath = base + QStringLiteral("/scaling_governor");
+        QFile current(mGovernorPath);
+        if (current.open(QIODevice::ReadOnly)) {
+            mGovernor = QString::fromLatin1(current.readAll()).trimmed();
+            current.close();
+        }
+        QFile list(base + QStringLiteral("/scaling_available_governors"));
+        if (list.open(QIODevice::ReadOnly)) {
+            mGovernors = QString::fromLatin1(list.readAll()).trimmed().split(QChar(' '), QString::SkipEmptyParts);
+            list.close();
+        }
+    }
+
+    void readTemperature()
+    {
+        int best = 0;
+        QDir thermal(QStringLiteral("/sys/class/thermal"));
+        const QStringList zones = thermal.entryList(QStringList() << QStringLiteral("thermal_zone*"), QDir::Dirs);
+        for (const QString &zone : zones) {
+            const int value = readInt(thermal.filePath(zone) + QStringLiteral("/temp"), 0) / 1000;
+            if (value > best && value < 150)
+                best = value;
+        }
+        mCpuTemp = best > 0 ? QStringLiteral("%1 ℃").arg(best) : QStringLiteral("未知");
+    }
+
+    void readMemory()
+    {
+        QFile file(QStringLiteral("/proc/meminfo"));
+        if (!file.open(QIODevice::ReadOnly))
+            return;
+        const QString text = QString::fromLatin1(file.readAll());
+        file.close();
+        qint64 total = 0;
+        qint64 available = 0;
+        const QStringList lines = z03SplitChar(text, QChar('\n'));
+        for (const QString &line : lines) {
+            if (line.startsWith(QStringLiteral("MemTotal:")))
+                total = line.mid(9).trimmed().split(QChar(' ')).value(0).toLongLong();
+            else if (line.startsWith(QStringLiteral("MemAvailable:")))
+                available = line.mid(13).trimmed().split(QChar(' ')).value(0).toLongLong();
+        }
+        if (total > 0) {
+            const double used = (total - available) / 1024.0;
+            const double all = total / 1024.0;
+            mMemoryText = QStringLiteral("%1 / %2 MB").arg(used, 0, 'f', 0).arg(all, 0, 'f', 0);
+        }
+    }
+
+    QString mBrightnessPath;
+    QString mMaxPath;
+    QString mGovernorPath;
+    int mBrightness = 0;
+    int mMaxBrightness = 255;
+    int mVolume = 0;
+    bool mVolumeAvailable = false;
+    int mBattery = 0;
+    QString mBatteryStatus;
+    QString mBatteryDetail;
+    QString mGovernor;
+    QStringList mGovernors;
+    QString mCpuTemp = QStringLiteral("未知");
+    QString mMemoryText = QStringLiteral("未知");
+    QString mStatus;
+};
+
+class Z03PlusNoteService : public QObject
+{
+    Q_OBJECT
+public:
+    explicit Z03PlusNoteService(QObject *parent = nullptr) : QObject(parent)
+    {
+        mDir = QStringLiteral("/home/user/z03plus/notes");
+        QDir().mkpath(mDir);
+    }
+
+    Q_INVOKABLE QVariantList list() const
+    {
+        QVariantList out;
+        const QFileInfoList files = QDir(mDir).entryInfoList(QStringList() << QStringLiteral("*.png"), QDir::Files, QDir::Time);
+        for (const QFileInfo &info : files) {
+            QVariantMap item;
+            item.insert(QStringLiteral("path"), info.filePath());
+            item.insert(QStringLiteral("name"), info.fileName());
+            item.insert(QStringLiteral("size"), info.size());
+            item.insert(QStringLiteral("modified"), info.lastModified().toString(QStringLiteral("MM-dd HH:mm")));
+            out.append(item);
+        }
+        return out;
+    }
+
+    Q_INVOKABLE QString save(const QString &dataUrl)
+    {
+        const int comma = dataUrl.indexOf(QLatin1Char(','));
+        if (comma < 0 || !dataUrl.startsWith(QStringLiteral("data:image/")))
+            return QString();
+        const QByteArray data = QByteArray::fromBase64(dataUrl.mid(comma + 1).toLatin1());
+        if (data.isEmpty())
+            return QString();
+        const QString name = QStringLiteral("note-%1.png")
+            .arg(QDateTime::currentDateTime().toString(QStringLiteral("yyyyMMdd-HHmmss")));
+        QFile file(QDir(mDir).filePath(name));
+        if (!file.open(QIODevice::WriteOnly))
+            return QString();
+        file.write(data);
+        file.close();
+        emit changed();
+        return file.fileName();
+    }
+
+    Q_INVOKABLE bool removeNote(const QString &path)
+    {
+        const QFileInfo info(path);
+        if (info.absolutePath() != mDir)
+            return false;
+        const bool ok = QFile::remove(info.filePath());
+        emit changed();
+        return ok;
+    }
+
+    Q_INVOKABLE QString directory() const { return mDir; }
+
+signals:
+    void changed();
+
+private:
+    QString mDir;
+};
+
+
 static void registerZ03PlusQmlTypes()
 {
     qputenv("QML_DISABLE_DISK_CACHE", "1");
@@ -3193,6 +3920,10 @@ static void registerZ03PlusQmlTypes()
     qmlRegisterType<Z03PlusNixService>("Z03Ultra", 1, 0, "NixService");
     qmlRegisterType<Z03PlusBrowserService>("Z03Ultra", 1, 0, "BrowserService");
     qmlRegisterType<Z03PlusUpdateService>("Z03Ultra", 1, 0, "UpdateService");
+    qmlRegisterType<Z03PlusTransferService>("Z03Ultra", 1, 0, "TransferService");
+    qmlRegisterType<Z03PlusAppService>("Z03Ultra", 1, 0, "AppService");
+    qmlRegisterType<Z03PlusSystemService>("Z03Ultra", 1, 0, "SystemService");
+    qmlRegisterType<Z03PlusNoteService>("Z03Ultra", 1, 0, "NoteService");
 }
 Q_COREAPP_STARTUP_FUNCTION(registerZ03PlusQmlTypes)
 

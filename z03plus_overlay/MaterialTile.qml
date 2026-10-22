@@ -3,9 +3,10 @@ import QtQuick 2.0
 Rectangle {
     id: tile
     property string text: ""
+    property string subtitle: ""
     property color accent: "#4C8DFF"
     signal clicked()
-    height: 70
+    height: subtitle.length > 0 ? 76 : 70
     radius: 12
     color: mouse.pressed ? "#2A2E38" : "#1B1E24"
     border.width: 1
@@ -34,16 +35,38 @@ Rectangle {
         opacity: 0.95
     }
 
-    Text {
-        text: tile.text
-        color: "#F2F3F5"
-        font.pixelSize: 17
-        font.weight: Font.Medium
-        elide: Text.ElideRight
+    Column {
         anchors.left: parent.left
         anchors.leftMargin: 26
         anchors.right: parent.right
-        anchors.rightMargin: 12
+        anchors.rightMargin: 28
+        anchors.verticalCenter: parent.verticalCenter
+        spacing: 3
+        Text {
+            width: parent.width
+            text: tile.text
+            color: "#F2F3F5"
+            font.pixelSize: 17
+            font.weight: Font.Medium
+            elide: Text.ElideRight
+        }
+        Text {
+            width: parent.width
+            visible: tile.subtitle.length > 0
+            text: tile.subtitle
+            color: "#8E9099"
+            font.pixelSize: 11
+            elide: Text.ElideRight
+        }
+    }
+
+    Text {
+        text: "\u203A"
+        color: tile.accent
+        opacity: 0.8
+        font.pixelSize: 22
+        anchors.right: parent.right
+        anchors.rightMargin: 14
         anchors.verticalCenter: parent.verticalCenter
     }
 

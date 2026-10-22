@@ -31,7 +31,7 @@ curl -fsSL https://github.com/OpenZybTeam/zyb_P010-P011_PenUltra/releases/latest
 
 `install.sh` 读取 GitHub 最新 Release，校验 `SHA256SUMS`，把旧文件备份到 `/home/user/z03plus/backup/`，安装 `libZ03Plus.so`、`z03plus.rcc`、`Z03Plus` 与 SSH 辅助脚本，写入 bind mount 启动钩子，然后重启主界面并检查注入结果。`update.sh` 在内存中取回最新 `install.sh` 并执行，两个脚本都不在设备上留下 `.sh` 文件。
 
-应用内也能更新：`设置 -> Z03Ultra 扩展 -> 关于` 显示当前版本（v1.2.9），点「检测更新」查询 Release；发现新版本后可在「下载源：直连 / 镜像」之间切换并直接安装；下载时显示进度条与百分比，完成后自动重启界面。
+应用内也能更新：`设置 -> Z03Ultra 扩展 -> 关于` 显示当前版本（v1.3.0），点「检测更新」查询 Release；发现新版本后可在「下载源：直连 / 镜像」之间切换并直接安装；下载时显示进度条与百分比，完成后自动重启界面。
 
 - 下载源也可用环境变量指定：`Z03ULTRA_MIRROR=1` 等同于 `--mirror`
 - 无法访问 GitHub 时，可指定下载目录：`curl -fsSL <install.sh 地址> | Z03ULTRA_BASE=<release 下载目录> sh`
@@ -63,7 +63,11 @@ curl -fsSL https://github.com/OpenZybTeam/zyb_P010-P011_PenUltra/releases/latest
    - 录音：按 `arecord` / `tinycap` / `gst-launch-1.0` 顺序选择后端，保存 16 kHz 单声道 WAV 到 `/home/user/z03plus/recordings`。
    - 终端 Shell：`/bin/sh -c` 执行命令，输出实时回显，支持停止与 60 秒超时。
    - 应用商店：使用 Nix（安装目录 `/home/nix`，启动时自动 bind mount 到 `/nix`；通过清华 TUNA/NJU 镜像下载 Nix 2.9.2 armv7l，复制 89 MB store 后手动执行 `nix-store --init/--load-db` 与 `nix-env -i`，并添加 nixos-22.05 频道；支持 HTTP 与跳过证书校验回退），支持搜索、按属性安装、查看已安装与更新频道。
-   - 网页浏览：基于系统自带 QtWebEngine 5.10（Chromium 61）的完整网页渲染，支持 JavaScript、CSS、图片与视频、点按链接、触摸滚动、前进后退、地址栏与搜索；使用移动版 User-Agent 适配窄屏，显示加载进度并在失败时提供重试。
+   - 网页浏览：基于系统自带 QtWebEngine 5.10（Chromium 61）的完整网页渲染，支持 JavaScript、CSS、图片与视频、点按链接、触摸滚动、前进后退、地址栏与搜索；地址栏右侧可切换移动版/桌面版 User-Agent，显示加载进度并在失败时提供重试。
+   - 手机互传：设备侧启动局域网 HTTP 服务（端口 8899-8910 自动选择），手机浏览器即可上传、下载、删除 `/home/user/z03plus/transfer` 中的文件，页面显示访问地址、文件列表与实时状态。
+   - 手写便签：触摸画板支持多色画笔与粗细、橡皮、撤销、清空，按时间保存为 PNG 到 `/home/user/z03plus/notes`，并提供便签画廊浏览与删除。
+   - 应用启动器：扫描 Nix 配置与系统 `applications` 目录中的 `.desktop` 文件，列出名称、注释与图标类别，点按即启动对应程序并回显结果。
+   - 系统控制：滑块调节屏幕亮度与 `amixer` 音量，查看电量、电池状态、CPU 温度、内存占用与 governor，可切换性能模式并执行重启/关机。
    - 关于设备：展示设备型号、发行版、内核、ARM 架构、CPU 型号与特性、内存、运行时间、根分区与 Qt 版本。
    - 关于 Z03Ultra：展示 Powered By OpenZybTeam 与 Based On PenPlus 项目地址，并可在内置浏览器打开。
    - “显示与灯光”会打开原厂 `SetLightPage.qml`。
