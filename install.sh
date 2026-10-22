@@ -43,6 +43,13 @@ download() {
     return 1
 }
 
+# 一次 curl 调用下载多个文件，复用同一条 TCP/TLS 连接，避免每个文件重复握手。
+download_many() {
+    curl -fsSL --connect-timeout 15 --max-time 900 --retry 1 --retry-delay 1 "$@" && return 0
+    curl -fsSLk --connect-timeout 15 --max-time 900 --retry 1 --retry-delay 1 "$@" && return 0
+    return 1
+}
+
 TAG=
 if [ -n "${Z03ULTRA_BASE:-}" ]; then
     BASE=$Z03ULTRA_BASE
@@ -66,15 +73,20 @@ else
 fi
 log "下载源: $(url "$BASE")"
 
-download "$(url "$BASE/SHA256SUMS")" "$TMP/SHA256SUMS" 60 || die "下载 SHA256SUMS 失败"
+set --
+set -- "$@" -o "$TMP/SHA256SUMS" "$(url "$BASE/SHA256SUMS")"
+for f in $FILES; do
+    set -- "$@" -o "$TMP/$f" "$(url "$BASE/$f")"
+done
+log "下载资产: $FILES"
+download_many "$@" || die "下载资产失败"
 
 for f in $FILES; do
-    log "下载 $f"
-    download "$(url "$BASE/$f")" "$TMP/$f" 600 || die "下载 $f 失败"
     want=$(grep " $f\$" "$TMP/SHA256SUMS" | awk '{print $1}' | head -n 1)
     got=$(sha256sum "$TMP/$f" | awk '{print $1}')
     [ -n "$want" ] || die "SHA256SUMS 中没有 $f"
     [ "$want" = "$got" ] || die "$f 校验失败"
+    log "已校验 $f"
 done
 
 grep -q 'libZ03Plus.so' "$TMP/Z03Plus" || die "Z03Plus 未包含 DT_NEEDED 依赖"
