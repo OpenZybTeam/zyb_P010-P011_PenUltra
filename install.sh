@@ -31,11 +31,6 @@ die() { echo "[z03ultra] $*" >&2; exit 1; }
 [ "$(id -u)" = 0 ] || die "请用 root 执行"
 command -v curl >/dev/null 2>&1 || die "缺少 curl"
 command -v sha256sum >/dev/null 2>&1 || die "缺少 sha256sum"
-
-WGET="wget"
-if wget --help 2>&1 | grep -q -- '--no-check-certificate'; then
-    WGET="wget --no-check-certificate"
-fi
 [ -d "$DEST" ] || mkdir -p "$DEST" || die "无法创建 $DEST"
 
 TMP=${TMPDIR:-/tmp}/z03ultra-install.$$
@@ -43,28 +38,48 @@ mkdir -p "$TMP" || die "无法创建临时目录"
 trap 'rm -rf "$TMP"' EXIT INT TERM
 
 download() {
-    $WGET -q -T "$3" -O "$2" "$1" 2>/dev/null && return 0
     curl -fsSL --connect-timeout 15 --max-time "$3" -o "$2" "$1" && return 0
     curl -fsSLk --connect-timeout 15 --max-time "$3" -o "$2" "$1" && return 0
     return 1
 }
 
-curl_asset() {
-    curl -fLk --http1.1 --progress-bar --connect-timeout 20 "$@"
+report_progress() {
+    sz=$(wc -c < "$1" 2>/dev/null | tr -d ' ')
+    [ -n "$sz" ] || sz=0
+    if [ -n "$2" ] && [ "$2" -gt 0 ] 2>/dev/null; then
+        awk -v s="$sz" -v t="$2" 'BEGIN { printf "\r[z03ultra]   %.1f / %.1f MB  %.0f%%", s/1048576, t/1048576, s*100/t }'
+    else
+        awk -v s="$sz" 'BEGIN { printf "\r[z03ultra]   %.1f MB", s/1048576 }'
+    fi
+    [ "${3:-}" = 1 ] && printf '\n'
 }
 
-# 逐个下载，wget 断点续传并显示进度；失败时用 curl 续传，不主动断开慢连接。
+asset_total() {
+    curl -fsSLk --connect-timeout 5 --max-time 10 -r 0-0 -D - -o /dev/null "$1" 2>/dev/null \
+        | tr -d '\r' \
+        | awk 'tolower($1) == "content-range:" { split($3, a, "/"); print a[2] }'
+}
+
+# 逐个下载：curl 静默传输，脚本每 3 秒自查文件大小并输出进度。
 fetch_asset() {
     name=$1
     src=$2
     dst=$3
     printf '[z03ultra] 下载 %s\n' "$name"
+    total=$(asset_total "$src")
     n=0
     while [ "$n" -lt 5 ]; do
         n=$((n + 1))
-        $WGET -c -O "$dst" "$src" && return 0
-        curl_asset -C - "$src" -o "$dst"
+        curl -fsSLk -C - -o "$dst" "$src" 2>/dev/null &
+        pid=$!
+        while kill -0 "$pid" 2>/dev/null; do
+            sleep 3
+            kill -0 "$pid" 2>/dev/null || break
+            report_progress "$dst" "${total:-}"
+        done
+        wait "$pid"
         rc=$?
+        report_progress "$dst" "${total:-}" 1
         [ "$rc" = 0 ] && return 0
         if [ "$rc" = 33 ] || [ "$rc" = 22 ]; then
             : > "$dst"
@@ -76,9 +91,8 @@ fetch_asset() {
 }
 
 fetch_fresh() {
-    $WGET -O "$3" "$2" && return 0
-    curl_asset "$2" -o "$3" && return 0
-    return 1
+    : > "$3"
+    fetch_asset "$1" "$2" "$3"
 }
 
 verify_asset() {

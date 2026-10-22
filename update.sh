@@ -20,17 +20,12 @@ die() { echo "[z03ultra] $*" >&2; exit 1; }
 
 command -v curl >/dev/null 2>&1 || die "缺少 curl"
 
-WGET="wget"
-if wget --help 2>&1 | grep -q -- '--no-check-certificate'; then
-    WGET="wget --no-check-certificate"
-fi
-
 log "更新源: $( [ "$MIRROR" = 1 ] && echo 镜像 || echo 直连 )"
 TMPF=$(mktemp /tmp/z03ultra-update.XXXXXX) || die "无法创建临时文件"
 trap 'rm -f "$TMPF"' EXIT INT TERM
-$WGET -O "$TMPF" "$BASE" \
-    || curl -fLk --http1.1 --progress-bar --connect-timeout 20 "$BASE" -o "$TMPF" \
+curl -fsSLk --connect-timeout 20 --max-time 120 "$BASE" -o "$TMPF" \
     || die "下载安装脚本失败，可改用 --direct/--mirror 重试"
 [ -s "$TMPF" ] || die "安装脚本内容为空"
+log "安装脚本已获取（$(wc -c < "$TMPF" | tr -d ' ') 字节）"
 
 sh "$TMPF" "$@"
