@@ -13,7 +13,7 @@ for arg in "$@"; do
         --direct) MIRROR=0 ;;
     esac
 done
-MIRROR_PREFIX="https://v4.gh-proxy.org/"
+MIRROR_PREFIX="https://down.npee.cn/?"
 FILES="libZ03Plus.so z03plus.rcc Z03Plus setup_ssh.sh update_ssh_status.sh"
 INIT=/etc/init.d/zybz03qt-init
 HOOK_LINE='Z=/home/user/z03plus/Z03Plus; L=/home/user/z03plus/libZ03Plus.so; [ -f "$Z" ] && [ -f "$L" ] && ! grep -q " /usr/bin/Z03 " /proc/mounts && mount --bind "$Z" /usr/bin/Z03'
@@ -94,6 +94,11 @@ fetch_asset() {
         [ "$n" -lt 5 ] && printf '[z03ultra] %s 未完成，续传中（第 %s 次）\n' "$name" "$n"
         sleep 2
     done
+    if [ -n "${4:-}" ]; then
+        printf '[z03ultra] %s 镜像不可用，改直连重试\n' "$name"
+        : > "$dst"
+        fetch_asset "$name" "$4" "$dst"
+    fi
     return 1
 }
 
@@ -114,7 +119,7 @@ if [ -n "${Z03ULTRA_BASE:-}" ]; then
     BASE=$Z03ULTRA_BASE
 else
     log "查询最新 release: $REPO（$( [ "$MIRROR" = 1 ] && echo 镜像 || echo 直连 )）"
-    if download "$(url "https://api.github.com/repos/$REPO/releases/latest")" "$TMP/release.json" 30; then
+    if download "https://api.github.com/repos/$REPO/releases/latest" "$TMP/release.json" 30; then
         BASE=$(grep -o '"browser_download_url": *"[^"]*SHA256SUMS"' "$TMP/release.json" \
             | head -n 1 \
             | sed 's/.*"\(http[^"]*\)".*/\1/' \
@@ -122,9 +127,9 @@ else
     fi
     if [ -z "${BASE:-}" ]; then
         log "API 不可用，改用 releases/latest 跳转"
-        TAG=$(curl -fsSI --connect-timeout 10 "$(url "https://github.com/$REPO/releases/latest")" 2>/dev/null \
+        TAG=$(curl -fsSI --connect-timeout 10 "https://github.com/$REPO/releases/latest" 2>/dev/null \
             | tr -d '\r' | awk 'tolower($1) == "location:" { print $2 }' | sed 's#.*/tag/##')
-        [ -n "$TAG" ] || TAG=$(curl -fsSIk --connect-timeout 10 "$(url "https://github.com/$REPO/releases/latest")" 2>/dev/null \
+        [ -n "$TAG" ] || TAG=$(curl -fsSIk --connect-timeout 10 "https://github.com/$REPO/releases/latest" 2>/dev/null \
             | tr -d '\r' | awk 'tolower($1) == "location:" { print $2 }' | sed 's#.*/tag/##')
         [ -n "$TAG" ] && BASE="https://github.com/$REPO/releases/download/$TAG"
     fi
@@ -133,9 +138,9 @@ fi
 log "下载源: $(url "$BASE")"
 
 log "下载资产: $FILES"
-fetch_asset SHA256SUMS "$(url "$BASE/SHA256SUMS")" "$TMP/SHA256SUMS" || die "下载 SHA256SUMS 失败"
+fetch_asset SHA256SUMS "$(url "$BASE/SHA256SUMS")" "$TMP/SHA256SUMS" "$BASE/SHA256SUMS" || die "下载 SHA256SUMS 失败"
 for f in $FILES; do
-    fetch_asset "$f" "$(url "$BASE/$f")" "$TMP/$f" || die "下载 $f 失败"
+    fetch_asset "$f" "$(url "$BASE/$f")" "$TMP/$f" "$BASE/$f" || die "下载 $f 失败"
 done
 
 for f in $FILES; do

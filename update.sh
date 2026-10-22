@@ -13,7 +13,7 @@ for arg in "$@"; do
 done
 
 BASE="https://github.com/$REPO/releases/latest/download/install.sh"
-[ "$MIRROR" = 1 ] && BASE="https://v4.gh-proxy.org/$BASE"
+[ "$MIRROR" = 1 ] && BASE="https://down.npee.cn/?$BASE"
 
 log() { echo "[z03ultra] $*"; }
 die() { echo "[z03ultra] $*" >&2; exit 1; }

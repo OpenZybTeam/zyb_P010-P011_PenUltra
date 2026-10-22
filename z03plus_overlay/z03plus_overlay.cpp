@@ -2728,9 +2728,9 @@ private:
 };
 
 
-#define Z03ULTRA_VERSION "1.2.4"
+#define Z03ULTRA_VERSION "1.2.5"
 #define Z03ULTRA_REPO "OpenZybTeam/zyb_P010-P011_PenUltra"
-#define Z03ULTRA_MIRROR_PREFIX "https://v4.gh-proxy.org/"
+#define Z03ULTRA_MIRROR_PREFIX "https://down.npee.cn/?"
 
 class Z03PlusUpdateService : public QObject
 {
@@ -2768,7 +2768,7 @@ public:
         mLatest.clear();
         setState(QStringLiteral("checking"), QStringLiteral("正在检测更新…"));
         const QString api = QStringLiteral("https://api.github.com/repos/%1/releases/latest").arg(QStringLiteral(Z03ULTRA_REPO));
-        QNetworkReply *reply = request(withMirror(api, mirror), 30);
+        QNetworkReply *reply = request(api, 30);
         connect(reply, &QNetworkReply::finished, this, [this, reply]() { onCheckFinished(reply); });
     }
 
@@ -2793,6 +2793,7 @@ public:
         mSums.clear();
         mData.clear();
         mIndex = 0;
+        mDirectOnly = false;
         mProgress = 0;
         mBusy = true;
         setState(QStringLiteral("downloading"), QStringLiteral("准备下载…"));
@@ -2900,7 +2901,8 @@ private:
             return;
         }
         const QString name = mQueue.at(mIndex);
-        const QString url = withMirror(mBase + QLatin1Char('/') + name, mInstallMirror);
+        const QString asset = mBase + QLatin1Char('/') + name;
+        const QString url = (mInstallMirror && !mDirectOnly) ? withMirror(asset, true) : asset;
         mData.clear();
         mProgress = 0;
         setState(QStringLiteral("downloading"),
@@ -2930,6 +2932,12 @@ private:
         const QString error = reply->errorString();
         reply->deleteLater();
         if (!ok) {
+            if (mInstallMirror && !mDirectOnly) {
+                mDirectOnly = true;
+                setState(QStringLiteral("downloading"), QStringLiteral("镜像不可用，改用直连…"));
+                downloadNext();
+                return;
+            }
             fail(QStringLiteral("下载 %1 失败：%2").arg(name).arg(error));
             return;
         }
@@ -3156,6 +3164,7 @@ private:
     int mProgress = 0;
     bool mBusy = false;
     bool mInstallMirror = false;
+    bool mDirectOnly = false;
 };
 
 static void registerZ03PlusQmlTypes()
