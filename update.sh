@@ -21,8 +21,8 @@ die() { echo "[z03ultra] $*" >&2; exit 1; }
 command -v curl >/dev/null 2>&1 || die "缺少 curl"
 
 log "更新源: $( [ "$MIRROR" = 1 ] && echo 镜像 || echo 直连 )"
-SCRIPT=$(curl -fsSL --connect-timeout 15 "$BASE" 2>/dev/null) \
-    || SCRIPT=$(curl -fsSLk --connect-timeout 15 "$BASE" 2>/dev/null) \
+SCRIPT=$(curl -fL --progress-bar --connect-timeout 15 "$BASE") \
+    || SCRIPT=$(curl -fLk --progress-bar --connect-timeout 15 "$BASE") \
     || die "下载安装脚本失败，可改用 --direct/--mirror 重试"
 [ -n "$SCRIPT" ] || die "安装脚本内容为空"
 
