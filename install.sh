@@ -45,6 +45,7 @@ download() {
 }
 
 report_progress() {
+    sz=0
     if [ -f "$1" ]; then
         sz=$(wc -c < "$1" 2>/dev/null | tr -d ' ')
     fi

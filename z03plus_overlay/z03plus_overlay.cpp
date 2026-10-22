@@ -2728,7 +2728,7 @@ private:
 };
 
 
-#define Z03ULTRA_VERSION "1.2.3"
+#define Z03ULTRA_VERSION "1.2.4"
 #define Z03ULTRA_REPO "OpenZybTeam/zyb_P010-P011_PenUltra"
 #define Z03ULTRA_MIRROR_PREFIX "https://v4.gh-proxy.org/"
 
