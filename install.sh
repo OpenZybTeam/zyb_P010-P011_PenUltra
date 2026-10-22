@@ -43,10 +43,14 @@ download() {
     return 1
 }
 
-# 一次 curl 调用下载多个文件，复用同一条 TCP/TLS 连接，避免每个文件重复握手。
-download_many() {
-    curl -fL --progress-bar --connect-timeout 15 --max-time 900 --retry 1 --retry-delay 1 "$@" && return 0
-    curl -fLk --progress-bar --connect-timeout 15 --max-time 900 --retry 1 --retry-delay 1 "$@" && return 0
+# 逐个下载并显示进度条；单文件独立连接，避免镜像长连接复用导致的卡死。
+fetch_asset() {
+    name=$1
+    src=$2
+    dst=$3
+    printf '[z03ultra] 下载 %s\n' "$name"
+    curl -fL --progress-bar --connect-timeout 15 --max-time 300 "$src" -o "$dst" && return 0
+    curl -fLk --progress-bar --connect-timeout 15 --max-time 300 "$src" -o "$dst" && return 0
     return 1
 }
 
@@ -73,13 +77,11 @@ else
 fi
 log "下载源: $(url "$BASE")"
 
-set --
-set -- "$@" -o "$TMP/SHA256SUMS" "$(url "$BASE/SHA256SUMS")"
-for f in $FILES; do
-    set -- "$@" -o "$TMP/$f" "$(url "$BASE/$f")"
-done
 log "下载资产: $FILES"
-download_many "$@" || die "下载资产失败"
+fetch_asset SHA256SUMS "$(url "$BASE/SHA256SUMS")" "$TMP/SHA256SUMS" || die "下载 SHA256SUMS 失败"
+for f in $FILES; do
+    fetch_asset "$f" "$(url "$BASE/$f")" "$TMP/$f" || die "下载 $f 失败"
+done
 
 for f in $FILES; do
     want=$(grep " $f\$" "$TMP/SHA256SUMS" | awk '{print $1}' | head -n 1)
