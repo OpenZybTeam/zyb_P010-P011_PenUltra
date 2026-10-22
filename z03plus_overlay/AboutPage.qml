@@ -12,6 +12,10 @@ Rectangle {
     signal closeRequested()
     signal openLink(string url)
 
+    property bool updateMirror: false
+
+    UpdateService { id: updater }
+
     ZybBackButton {
         id: backButton
         anchors.top: parent.top
@@ -68,6 +72,94 @@ Rectangle {
                     spacing: 3
                     ZybText { text: "Z03Ultra"; font.styleName: "Bold"; font.pixelSize: 24 }
                     ZybText { text: qsTr("Z03 / P010 / P011 词典笔扩展"); color: "#9DA4AD"; font.pixelSize: 14 }
+                }
+            }
+
+            Rectangle {
+                width: parent.width
+                height: updateColumn.height + 32
+                radius: 10
+                color: root.cardColor
+
+                Column {
+                    id: updateColumn
+                    anchors.left: parent.left
+                    anchors.right: parent.right
+                    anchors.verticalCenter: parent.verticalCenter
+                    anchors.leftMargin: 16
+                    anchors.rightMargin: 16
+                    spacing: 10
+
+                    Row {
+                        width: parent.width
+                        spacing: 10
+                        ZybText {
+                            text: qsTr("当前版本")
+                            color: "#9DA4AD"
+                            font.pixelSize: 15
+                        }
+                        ZybText {
+                            text: "v" + updater.currentVersion
+                            font.styleName: "Bold"
+                            font.pixelSize: 15
+                        }
+                    }
+
+                    ZybText {
+                        width: parent.width
+                        text: updater.status.length > 0 ? updater.status : qsTr("检测 GitHub Release 是否有新版本")
+                        color: updater.state === "error" ? "#FF7A7A"
+                             : updater.state === "available" ? "#31C7A5" : "#9DA4AD"
+                        font.pixelSize: 13
+                        wrapMode: Text.WordWrap
+                    }
+
+                    Rectangle {
+                        width: parent.width
+                        height: 6
+                        radius: 3
+                        color: "#2A2E33"
+                        visible: updater.busy && updater.progress > 0
+
+                        Rectangle {
+                            width: parent.width * Math.min(100, updater.progress) / 100
+                            height: parent.height
+                            radius: 3
+                            color: "#31C7A5"
+                        }
+                    }
+
+                    Row {
+                        width: parent.width
+                        spacing: 10
+
+                        BasicButton {
+                            width: (parent.width - 10) / 2
+                            height: 48
+                            radius: 8
+                            checkable: false
+                            backgroundTheme: root.cardColor
+                            text: root.updateMirror ? qsTr("下载源：镜像") : qsTr("下载源：直连")
+                            onClicked: root.updateMirror = !root.updateMirror
+                        }
+
+                        BasicButton {
+                            width: (parent.width - 10) / 2
+                            height: 48
+                            radius: 8
+                            checkable: false
+                            backgroundTheme: root.cardColor
+                            text: updater.state === "available"
+                                  ? qsTr("安装 ") + updater.latestVersion : qsTr("检测更新")
+                            enabled: !updater.busy
+                            onClicked: {
+                                if (updater.state === "available")
+                                    updater.installUpdate(root.updateMirror)
+                                else
+                                    updater.checkForUpdates(root.updateMirror)
+                            }
+                        }
+                    }
                 }
             }
 

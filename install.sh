@@ -6,11 +6,26 @@ set -u
 
 REPO="${Z03ULTRA_REPO:-OpenZybTeam/zyb_P010-P011_PenUltra}"
 DEST="${Z03ULTRA_DEST:-/home/user/z03plus}"
+MIRROR=${Z03ULTRA_MIRROR:-0}
+for arg in "$@"; do
+    case "$arg" in
+        --mirror) MIRROR=1 ;;
+        --direct) MIRROR=0 ;;
+    esac
+done
+MIRROR_PREFIX="https://gh-proxy.com/"
 FILES="libZ03Plus.so z03plus.rcc Z03Plus"
 INIT=/etc/init.d/zybz03qt-init
 HOOK_LINE='Z=/home/user/z03plus/Z03Plus; L=/home/user/z03plus/libZ03Plus.so; [ -f "$Z" ] && [ -f "$L" ] && ! grep -q " /usr/bin/Z03 " /proc/mounts && mount --bind "$Z" /usr/bin/Z03'
 
 log() { echo "[z03ultra] $*"; }
+url() {
+    if [ "$MIRROR" = 1 ]; then
+        printf '%s%s' "$MIRROR_PREFIX" "$1"
+    else
+        printf '%s' "$1"
+    fi
+}
 die() { echo "[z03ultra] $*" >&2; exit 1; }
 
 [ "$(id -u)" = 0 ] || die "请用 root 执行"
@@ -32,8 +47,8 @@ TAG=
 if [ -n "${Z03ULTRA_BASE:-}" ]; then
     BASE=$Z03ULTRA_BASE
 else
-    log "查询最新 release: $REPO"
-    if download "https://api.github.com/repos/$REPO/releases/latest" "$TMP/release.json" 30; then
+    log "查询最新 release: $REPO（$( [ "$MIRROR" = 1 ] && echo 镜像 || echo 直连 )）"
+    if download "$(url "https://api.github.com/repos/$REPO/releases/latest")" "$TMP/release.json" 30; then
         BASE=$(grep -o '"browser_download_url": *"[^"]*SHA256SUMS"' "$TMP/release.json" \
             | head -n 1 \
             | sed 's/.*"\(http[^"]*\)".*/\1/' \
@@ -41,21 +56,21 @@ else
     fi
     if [ -z "${BASE:-}" ]; then
         log "API 不可用，改用 releases/latest 跳转"
-        TAG=$(curl -fsSI --connect-timeout 10 "https://github.com/$REPO/releases/latest" 2>/dev/null \
+        TAG=$(curl -fsSI --connect-timeout 10 "$(url "https://github.com/$REPO/releases/latest")" 2>/dev/null \
             | tr -d '\r' | awk 'tolower($1) == "location:" { print $2 }' | sed 's#.*/tag/##')
-        [ -n "$TAG" ] || TAG=$(curl -fsSIk --connect-timeout 10 "https://github.com/$REPO/releases/latest" 2>/dev/null \
+        [ -n "$TAG" ] || TAG=$(curl -fsSIk --connect-timeout 10 "$(url "https://github.com/$REPO/releases/latest")" 2>/dev/null \
             | tr -d '\r' | awk 'tolower($1) == "location:" { print $2 }' | sed 's#.*/tag/##')
         [ -n "$TAG" ] && BASE="https://github.com/$REPO/releases/download/$TAG"
     fi
     [ -n "${BASE:-}" ] || die "无法获取最新 release，可设置 Z03ULTRA_BASE 指向下载目录"
 fi
-log "下载源: $BASE"
+log "下载源: $(url "$BASE")"
 
-download "$BASE/SHA256SUMS" "$TMP/SHA256SUMS" 60 || die "下载 SHA256SUMS 失败"
+download "$(url "$BASE/SHA256SUMS")" "$TMP/SHA256SUMS" 60 || die "下载 SHA256SUMS 失败"
 
 for f in $FILES; do
     log "下载 $f"
-    download "$BASE/$f" "$TMP/$f" 600 || die "下载 $f 失败"
+    download "$(url "$BASE/$f")" "$TMP/$f" 600 || die "下载 $f 失败"
     want=$(grep " $f\$" "$TMP/SHA256SUMS" | awk '{print $1}' | head -n 1)
     got=$(sha256sum "$TMP/$f" | awk '{print $1}')
     [ -n "$want" ] || die "SHA256SUMS 中没有 $f"

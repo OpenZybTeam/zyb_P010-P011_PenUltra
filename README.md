@@ -15,11 +15,25 @@ Z03Ultra 是基于 Z03Plus 扩展项目发展而来的分支，保留其 overlay
 设备联网并具备 root 权限时，在设备终端执行：
 
 ```sh
+# 直连 GitHub
 curl -fsSL https://github.com/OpenZybTeam/zyb_P010-P011_PenUltra/releases/latest/download/install.sh | sh
+
+# 镜像加速（gh-proxy.com）
+curl -fsSL https://github.com/OpenZybTeam/zyb_P010-P011_PenUltra/releases/latest/download/install.sh | sh -s -- --mirror
 ```
 
-脚本会读取 GitHub 最新 Release，校验 `SHA256SUMS`，把旧文件备份到 `/home/user/z03plus/backup/`，安装 `libZ03Plus.so`、`z03plus.rcc`、`Z03Plus`，把一行 bind mount 钩子写入 `/etc/init.d/zybz03qt-init`，然后重启主界面并检查注入结果。安装脚本通过管道执行，不会在设备上留下 `.sh` 文件。
+更新走独立的一键脚本，同样支持直连与镜像：
 
+```sh
+curl -fsSL https://github.com/OpenZybTeam/zyb_P010-P011_PenUltra/releases/latest/download/update.sh | sh
+curl -fsSL https://github.com/OpenZybTeam/zyb_P010-P011_PenUltra/releases/latest/download/update.sh | sh -s -- --mirror
+```
+
+`install.sh` 读取 GitHub 最新 Release，校验 `SHA256SUMS`，把旧文件备份到 `/home/user/z03plus/backup/`，安装 `libZ03Plus.so`、`z03plus.rcc`、`Z03Plus`，写入 bind mount 启动钩子，然后重启主界面并检查注入结果。`update.sh` 在内存中取回最新 `install.sh` 并执行，两个脚本都不在设备上留下 `.sh` 文件。
+
+应用内也能更新：`设置 -> Z03Ultra 扩展 -> 关于` 显示当前版本（v1.1.0），点「检测更新」查询 Release；发现新版本后可在「下载源：直连 / 镜像」之间切换并直接安装，完成后自动重启界面。
+
+- 下载源也可用环境变量指定：`Z03ULTRA_MIRROR=1` 等同于 `--mirror`
 - 无法访问 GitHub 时，可指定下载目录：`curl -fsSL <install.sh 地址> | Z03ULTRA_BASE=<release 下载目录> sh`
 - 指定其他仓库：`curl -fsSL <install.sh 地址> | Z03ULTRA_REPO=<owner/repo> sh`
 - 回退见下文“回退”一节。

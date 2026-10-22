@@ -422,3 +422,31 @@ endpoint=https://api.openai.com/v1/chat/completions
 key=sk-your-key-here
 model=gpt-3.5-turbo
 ```
+
+## 11. 版本号、应用内更新与下载源
+
+当前版本号定义在 `z03plus_overlay/z03plus_overlay.cpp` 的 `Z03ULTRA_VERSION`，关于页直接读取该常量显示 `v1.1.0`。发版时同步修改该常量并创建同名 tag。
+
+关于页的「检测更新」通过 GitHub API 读取 `releases/latest`，比较 `tag_name` 与当前版本。检测与下载都支持两种源：
+
+| 源 | API | 资产 |
+| --- | --- | --- |
+| 直连 | `https://api.github.com/repos/<repo>/releases/latest` | `https://github.com/<repo>/releases/download/<tag>/<file>` |
+| 镜像 | `https://gh-proxy.com/https://api.github.com/...` | `https://gh-proxy.com/https://github.com/...` |
+
+应用内安装会依次下载 `SHA256SUMS`、`libZ03Plus.so`、`z03plus.rcc`、`Z03Plus`，逐个校验 SHA256 后原子替换 `/home/user/z03plus/` 下的文件，备份到 `backup/`，确认启动钩子存在，然后由独立 shell 停止守护脚本、解除旧 bind mount、重新挂载新副本并恢复守护循环。设备缺少 CA 时请求会忽略证书错误，与 `install.sh` 的 `curl -k` 回退保持一致。
+
+脚本侧：
+
+```sh
+# 安装 / 更新：直连与镜像
+curl -fsSL .../install.sh | sh
+curl -fsSL .../install.sh | sh -s -- --mirror
+curl -fsSL .../update.sh | sh
+curl -fsSL .../update.sh | sh -s -- --mirror
+
+# 等价环境变量
+Z03ULTRA_MIRROR=1
+```
+
+`update.sh` 在内存中取回最新 `install.sh` 并转交参数，不在设备落地脚本；`install.sh` 的 `--mirror` 会同时代理 API、`releases/latest` 跳转与所有资产下载。

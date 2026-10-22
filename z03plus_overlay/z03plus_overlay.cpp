@@ -1,5 +1,6 @@
 // Z03Plus QRC overlay with on-device verification of the final resolved file.
 #include <QCoreApplication>
+#include <QCryptographicHash>
 #include <QDateTime>
 #include <QDir>
 #include <QDirIterator>
@@ -31,6 +32,7 @@
 #include <QResource>
 #include <QSaveFile>
 #include <QSettings>
+#include <QSslError>
 #include <QUrl>
 #include <QTextCodec>
 #include <QVariantList>
@@ -2706,6 +2708,431 @@ private:
     QHash<QTcpSocket *, QByteArray> mBuffers;
 };
 
+
+#define Z03ULTRA_VERSION "1.1.0"
+#define Z03ULTRA_REPO "OpenZybTeam/zyb_P010-P011_PenUltra"
+#define Z03ULTRA_MIRROR_PREFIX "https://gh-proxy.com/"
+
+class Z03PlusUpdateService : public QObject
+{
+    Q_OBJECT
+    Q_PROPERTY(QString currentVersion READ currentVersion CONSTANT)
+    Q_PROPERTY(QString latestVersion READ latestVersion NOTIFY changed)
+    Q_PROPERTY(QString state READ state NOTIFY changed)
+    Q_PROPERTY(QString status READ status NOTIFY changed)
+    Q_PROPERTY(int progress READ progress NOTIFY changed)
+    Q_PROPERTY(bool busy READ busy NOTIFY changed)
+public:
+    explicit Z03PlusUpdateService(QObject *parent = nullptr) : QObject(parent)
+    {
+        mTimeout.setSingleShot(true);
+        connect(&mTimeout, &QTimer::timeout, this, [this]() {
+            if (mReply)
+                mReply->abort();
+        });
+    }
+
+    QString currentVersion() const { return QStringLiteral(Z03ULTRA_VERSION); }
+    QString latestVersion() const { return mLatest; }
+    QString state() const { return mState; }
+    QString status() const { return mStatus; }
+    int progress() const { return mProgress; }
+    bool busy() const { return mBusy; }
+
+    Q_INVOKABLE void checkForUpdates(bool mirror)
+    {
+        if (mBusy)
+            return;
+        mBusy = true;
+        mProgress = 0;
+        mBase.clear();
+        mLatest.clear();
+        setState(QStringLiteral("checking"), QStringLiteral("正在检测更新…"));
+        const QString api = QStringLiteral("https://api.github.com/repos/%1/releases/latest").arg(QStringLiteral(Z03ULTRA_REPO));
+        QNetworkReply *reply = request(withMirror(api, mirror), 30);
+        connect(reply, &QNetworkReply::finished, this, [this, reply]() { onCheckFinished(reply); });
+    }
+
+    Q_INVOKABLE void installUpdate(bool mirror)
+    {
+        if (mBusy)
+            return;
+        if (mBase.isEmpty()) {
+            setState(QStringLiteral("error"), QStringLiteral("请先检测更新"));
+            return;
+        }
+        mInstallMirror = mirror;
+        mTmp = QStringLiteral("/home/user/z03plus/update.tmp");
+        QDir(mTmp).removeRecursively();
+        if (!QDir().mkpath(mTmp)) {
+            fail(QStringLiteral("无法创建临时目录"));
+            return;
+        }
+        mQueue = QStringList() << QStringLiteral("SHA256SUMS") << QStringLiteral("libZ03Plus.so")
+                               << QStringLiteral("z03plus.rcc") << QStringLiteral("Z03Plus");
+        mSums.clear();
+        mData.clear();
+        mIndex = 0;
+        mProgress = 0;
+        mBusy = true;
+        setState(QStringLiteral("downloading"), QStringLiteral("准备下载…"));
+        downloadNext();
+    }
+
+signals:
+    void changed();
+
+private:
+    static QString withMirror(const QString &url, bool mirror)
+    {
+        if (!mirror)
+            return url;
+        return QStringLiteral(Z03ULTRA_MIRROR_PREFIX) + url;
+    }
+
+    static bool versionNewer(const QString &candidate, const QString &current)
+    {
+        auto parts = [](QString value) {
+            if (value.startsWith(QLatin1Char('v')) || value.startsWith(QLatin1Char('V')))
+                value.remove(0, 1);
+            QStringList out;
+            for (const QString &segment : z03SplitChar(value, QChar('.'))) {
+                QString digits;
+                for (const QChar ch : segment) {
+                    if (ch.isDigit())
+                        digits += ch;
+                    else
+                        break;
+                }
+                out.append(digits);
+            }
+            return out;
+        };
+        const QStringList a = parts(candidate);
+        const QStringList b = parts(current);
+        const int count = qMax(a.size(), b.size());
+        for (int i = 0; i < count; ++i) {
+            const int left = i < a.size() ? a.at(i).toInt() : 0;
+            const int right = i < b.size() ? b.at(i).toInt() : 0;
+            if (left != right)
+                return left > right;
+        }
+        return false;
+    }
+
+    QNetworkReply *request(const QString &url, int timeoutSeconds)
+    {
+        QNetworkRequest request((QUrl(url)));
+        request.setAttribute(QNetworkRequest::FollowRedirectsAttribute, true);
+        request.setHeader(QNetworkRequest::UserAgentHeader, QStringLiteral("Z03Ultra/" Z03ULTRA_VERSION));
+        request.setRawHeader("Accept", "application/vnd.github+json");
+        mReply = mManager.get(request);
+        connect(mReply, &QNetworkReply::sslErrors, this, [this](const QList<QSslError> &) {
+            if (mReply)
+                mReply->ignoreSslErrors();
+        });
+        mTimeout.start(timeoutSeconds * 1000);
+        return mReply;
+    }
+
+    void onCheckFinished(QNetworkReply *reply)
+    {
+        if (reply != mReply) {
+            reply->deleteLater();
+            return;
+        }
+        mTimeout.stop();
+        mReply = nullptr;
+        const int code = reply->attribute(QNetworkRequest::HttpStatusCodeAttribute).toInt();
+        const QByteArray body = reply->readAll();
+        const bool ok = reply->error() == QNetworkReply::NoError && code >= 200 && code < 300;
+        const QString error = reply->errorString();
+        reply->deleteLater();
+        if (!ok) {
+            mBusy = false;
+            setState(QStringLiteral("error"),
+                     QStringLiteral("检测失败：%1（可切换镜像源重试）").arg(error));
+            return;
+        }
+        const QJsonObject obj = QJsonDocument::fromJson(body).object();
+        const QString tag = obj.value(QStringLiteral("tag_name")).toString();
+        if (tag.isEmpty()) {
+            mBusy = false;
+            setState(QStringLiteral("error"), QStringLiteral("检测失败：返回数据缺少版本号"));
+            return;
+        }
+        mLatest = tag;
+        mBase = QStringLiteral("https://github.com/%1/releases/download/%2")
+                    .arg(QStringLiteral(Z03ULTRA_REPO), tag);
+        mBusy = false;
+        if (versionNewer(tag, currentVersion())) {
+            setState(QStringLiteral("available"), QStringLiteral("发现新版本 %1").arg(tag));
+        } else {
+            setState(QStringLiteral("latest"), QStringLiteral("当前已是最新版本"));
+        }
+    }
+
+    void downloadNext()
+    {
+        if (mIndex >= mQueue.size()) {
+            mBusy = false;
+            performInstall();
+            return;
+        }
+        const QString name = mQueue.at(mIndex);
+        const QString url = withMirror(mBase + QLatin1Char('/') + name, mInstallMirror);
+        mData.clear();
+        mProgress = 0;
+        setState(QStringLiteral("downloading"),
+                 QStringLiteral("正在下载 %1（%2/%3）").arg(name).arg(mIndex + 1).arg(mQueue.size()));
+        QNetworkReply *reply = request(url, 900);
+        connect(reply, &QNetworkReply::downloadProgress, this, [this](qint64 received, qint64 total) {
+            if (total > 0) {
+                mProgress = int(received * 100 / total);
+                emit changed();
+            }
+        });
+        connect(reply, &QNetworkReply::readyRead, this, [this, reply]() { mData += reply->readAll(); });
+        connect(reply, &QNetworkReply::finished, this, [this, reply, name]() { onAssetFinished(reply, name); });
+    }
+
+    void onAssetFinished(QNetworkReply *reply, const QString &name)
+    {
+        if (reply != mReply) {
+            reply->deleteLater();
+            return;
+        }
+        mTimeout.stop();
+        mReply = nullptr;
+        mData += reply->readAll();
+        const int code = reply->attribute(QNetworkRequest::HttpStatusCodeAttribute).toInt();
+        const bool ok = reply->error() == QNetworkReply::NoError && code >= 200 && code < 300;
+        const QString error = reply->errorString();
+        reply->deleteLater();
+        if (!ok) {
+            fail(QStringLiteral("下载 %1 失败：%2").arg(name, error));
+            return;
+        }
+        if (mData.isEmpty()) {
+            fail(QStringLiteral("下载 %1 内容为空").arg(name));
+            return;
+        }
+        QFile out(mTmp + QLatin1Char('/') + name);
+        if (!out.open(QIODevice::WriteOnly) || out.write(mData) != mData.size()) {
+            fail(QStringLiteral("写入 %1 失败").arg(name));
+            return;
+        }
+        out.close();
+        if (name == QStringLiteral("SHA256SUMS")) {
+            const QString text = QString::fromUtf8(mData);
+            for (const QString &line : z03SplitChar(text, QChar('\n'))) {
+                const QString trimmed = line.trimmed();
+                if (trimmed.isEmpty())
+                    continue;
+                QString hash;
+                QString file;
+                for (const QString &part : z03SplitChar(trimmed, QChar(' '))) {
+                    if (part.isEmpty())
+                        continue;
+                    if (hash.isEmpty())
+                        hash = part;
+                    else {
+                        file = part;
+                        break;
+                    }
+                }
+                if (file.startsWith(QLatin1Char('*')))
+                    file.remove(0, 1);
+                if (!file.isEmpty())
+                    mSums.insert(file, hash.toLower());
+            }
+            if (mSums.isEmpty()) {
+                fail(QStringLiteral("SHA256SUMS 解析失败"));
+                return;
+            }
+        } else {
+            const QString want = mSums.value(name);
+            if (want.isEmpty()) {
+                fail(QStringLiteral("SHA256SUMS 缺少 %1").arg(name));
+                return;
+            }
+            const QString got = QString::fromLatin1(
+                QCryptographicHash::hash(mData, QCryptographicHash::Sha256).toHex());
+            if (got != want) {
+                fail(QStringLiteral("%1 校验失败").arg(name));
+                return;
+            }
+        }
+        ++mIndex;
+        downloadNext();
+    }
+
+    bool ensureBootHook(QString *error)
+    {
+        const QString init = QStringLiteral("/etc/init.d/zybz03qt-init");
+        QFile file(init);
+        if (!file.open(QIODevice::ReadOnly)) {
+            *error = QStringLiteral("无法读取 %1").arg(init);
+            return false;
+        }
+        const QString current = QString::fromUtf8(file.readAll());
+        file.close();
+        if (current.contains(QStringLiteral("mount --bind")) && current.contains(QStringLiteral("Z03Plus")))
+            return true;
+
+        QStringList lines = z03SplitChar(current, QChar('\n'));
+        int insertAt = -1;
+        for (int i = 0; i < lines.size(); ++i) {
+            if (lines.at(i).contains(QStringLiteral("zyb_z03_launch.sh"))) {
+                insertAt = i;
+                break;
+            }
+        }
+        if (insertAt < 0) {
+            *error = QStringLiteral("启动脚本结构不匹配，无法写入持久化钩子");
+            return false;
+        }
+        const QString backup = QStringLiteral("/home/user/z03plus/zybz03qt-init.orig");
+        if (!QFile::exists(backup))
+            QFile::copy(init, backup);
+        lines.insert(insertAt, QStringLiteral(
+            "Z=/home/user/z03plus/Z03Plus; L=/home/user/z03plus/libZ03Plus.so; [ -f \"$Z\" ] && [ -f \"$L\" ] && "
+            "! grep -q \" /usr/bin/Z03 \" /proc/mounts && mount --bind \"$Z\" /usr/bin/Z03"));
+        QProcess::execute(QStringLiteral("/bin/mount"), QStringList() << QStringLiteral("-o") << QStringLiteral("remount,rw") << QStringLiteral("/"));
+        QSaveFile out(init);
+        if (!out.open(QIODevice::WriteOnly)) {
+            QProcess::execute(QStringLiteral("/bin/mount"), QStringList() << QStringLiteral("-o") << QStringLiteral("remount,ro") << QStringLiteral("/"));
+            *error = QStringLiteral("无法写入 %1").arg(init);
+            return false;
+        }
+        out.write(lines.join(QLatin1Char('\n')).toUtf8());
+        if (!out.commit()) {
+            QProcess::execute(QStringLiteral("/bin/mount"), QStringList() << QStringLiteral("-o") << QStringLiteral("remount,ro") << QStringLiteral("/"));
+            *error = QStringLiteral("替换 %1 失败").arg(init);
+            return false;
+        }
+        QFile::setPermissions(init, QFileDevice::ReadOwner | QFileDevice::WriteOwner | QFileDevice::ExeOwner
+                                    | QFileDevice::ReadGroup | QFileDevice::ExeGroup
+                                    | QFileDevice::ReadOther | QFileDevice::ExeOther);
+        QProcess::execute(QStringLiteral("/bin/sync"), QStringList());
+        QProcess::execute(QStringLiteral("/bin/mount"), QStringList() << QStringLiteral("-o") << QStringLiteral("remount,ro") << QStringLiteral("/"));
+        return true;
+    }
+
+    void performInstall()
+    {
+        setState(QStringLiteral("installing"), QStringLiteral("校验通过，正在安装…"));
+        const QString dest = QStringLiteral("/home/user/z03plus");
+
+        QFile exe(mTmp + QStringLiteral("/Z03Plus"));
+        if (!exe.open(QIODevice::ReadOnly)) {
+            fail(QStringLiteral("读取 Z03Plus 失败"));
+            return;
+        }
+        const QByteArray head = exe.read(2 * 1024 * 1024);
+        exe.close();
+        if (!head.contains("libZ03Plus.so")) {
+            fail(QStringLiteral("Z03Plus 未包含注入依赖"));
+            return;
+        }
+
+        QString hookError;
+        if (!ensureBootHook(&hookError)) {
+            fail(hookError);
+            return;
+        }
+
+        QDir().mkpath(dest + QStringLiteral("/backup"));
+        for (const QString &name : mQueue) {
+            if (name == QStringLiteral("SHA256SUMS"))
+                continue;
+            const QString target = dest + QLatin1Char('/') + name;
+            if (QFile::exists(target)) {
+                QFile::remove(dest + QStringLiteral("/backup/") + name);
+                QFile::copy(target, dest + QStringLiteral("/backup/") + name);
+            }
+        }
+
+        for (const QString &name : mQueue) {
+            if (name == QStringLiteral("SHA256SUMS"))
+                continue;
+            const QByteArray source = QFile::encodeName(mTmp + QLatin1Char('/') + name);
+            const QByteArray target = QFile::encodeName(dest + QLatin1Char('/') + name);
+            if (std::rename(source.constData(), target.constData()) != 0) {
+                fail(QStringLiteral("写入 %1 失败").arg(name));
+                return;
+            }
+            if (name == QStringLiteral("z03plus.rcc")) {
+                QFile::setPermissions(dest + QLatin1Char('/') + name,
+                                      QFileDevice::ReadOwner | QFileDevice::WriteOwner
+                                          | QFileDevice::ReadGroup | QFileDevice::ReadOther);
+            } else {
+                QFile::setPermissions(dest + QLatin1Char('/') + name,
+                                      QFileDevice::ReadOwner | QFileDevice::WriteOwner | QFileDevice::ExeOwner
+                                          | QFileDevice::ReadGroup | QFileDevice::ExeGroup
+                                          | QFileDevice::ReadOther | QFileDevice::ExeOther);
+            }
+        }
+        QProcess::execute(QStringLiteral("/bin/sync"), QStringList());
+        mProgress = 100;
+        setState(QStringLiteral("installing"), QStringLiteral("安装完成，应用即将重启…"));
+        restartLater();
+    }
+
+    void restartLater()
+    {
+        const QString script = QStringLiteral(
+            "sleep 2\n"
+            "G=$(ps w | grep '[z]yb_z03_launch.sh' | awk '{print $1}' | head -n 1)\n"
+            "[ -n \"$G\" ] && kill -STOP \"$G\"\n"
+            "kill $(pidof Z03) 2>/dev/null\n"
+            "kill $(pidof Z03Plus) 2>/dev/null\n"
+            "sleep 1\n"
+            "umount /usr/bin/Z03 2>/dev/null || umount -l /usr/bin/Z03 2>/dev/null\n"
+            "mount --bind /home/user/z03plus/Z03Plus /usr/bin/Z03 2>/dev/null\n"
+            "[ -n \"$G\" ] && kill -CONT \"$G\"\n"
+            "sleep 12\n"
+            "if [ -z \"$(pidof Z03)\" ] && [ -z \"$(pidof Z03Plus)\" ]; then\n"
+            "  cd /home\n"
+            "  HOME=/home XDG_RUNTIME_DIR=/run/user/0 nohup /home/user/z03plus/Z03Plus -platform wayland "
+            ">/home/user/z03plus/z03plus.out 2>&1 </dev/null &\n"
+            "fi\n");
+        QProcess::startDetached(QStringLiteral("/bin/sh"), QStringList() << QStringLiteral("-c") << script);
+    }
+
+    void fail(const QString &message)
+    {
+        mBusy = false;
+        mProgress = 0;
+        if (mReply)
+            mReply->abort();
+        setState(QStringLiteral("error"), message);
+    }
+
+    void setState(const QString &state, const QString &status)
+    {
+        mState = state;
+        mStatus = status;
+        emit changed();
+    }
+
+    QNetworkAccessManager mManager;
+    QTimer mTimeout;
+    QNetworkReply *mReply = nullptr;
+    QString mLatest;
+    QString mBase;
+    QString mState = QStringLiteral("idle");
+    QString mStatus;
+    QString mTmp;
+    QStringList mQueue;
+    QHash<QString, QString> mSums;
+    QByteArray mData;
+    int mIndex = 0;
+    int mProgress = 0;
+    bool mBusy = false;
+    bool mInstallMirror = false;
+};
+
 static void registerZ03PlusQmlTypes()
 {
     qputenv("QML_DISABLE_DISK_CACHE", "1");
@@ -2726,6 +3153,7 @@ static void registerZ03PlusQmlTypes()
     qmlRegisterType<Z03PlusRecorderService>("Z03Ultra", 1, 0, "RecorderService");
     qmlRegisterType<Z03PlusNixService>("Z03Ultra", 1, 0, "NixService");
     qmlRegisterType<Z03PlusBrowserService>("Z03Ultra", 1, 0, "BrowserService");
+    qmlRegisterType<Z03PlusUpdateService>("Z03Ultra", 1, 0, "UpdateService");
 }
 Q_COREAPP_STARTUP_FUNCTION(registerZ03PlusQmlTypes)
 
