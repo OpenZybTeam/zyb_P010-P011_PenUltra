@@ -14,7 +14,7 @@ done
 
 DIRECT="https://github.com/$REPO/releases/latest/download/install.sh"
 BASE="$DIRECT"
-[ "$MIRROR" = 1 ] && BASE="https://down.npee.cn/?$DIRECT"
+[ "$MIRROR" = 1 ] && BASE="https://gh.b52m.cn/${DIRECT#https://}"
 
 log() { echo "[z03ultra] $*"; }
 die() { echo "[z03ultra] $*" >&2; exit 1; }

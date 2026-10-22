@@ -2728,9 +2728,9 @@ private:
 };
 
 
-#define Z03ULTRA_VERSION "1.2.6"
+#define Z03ULTRA_VERSION "1.2.7"
 #define Z03ULTRA_REPO "OpenZybTeam/zyb_P010-P011_PenUltra"
-#define Z03ULTRA_MIRROR_PREFIX "https://down.npee.cn/?"
+#define Z03ULTRA_MIRROR_PREFIX "https://gh.b52m.cn/"
 
 class Z03PlusUpdateService : public QObject
 {
@@ -2808,7 +2808,12 @@ private:
     {
         if (!mirror)
             return url;
-        return QStringLiteral(Z03ULTRA_MIRROR_PREFIX) + url;
+        QString rest = url;
+        if (rest.startsWith(QStringLiteral("https://")))
+            rest.remove(0, 8);
+        else if (rest.startsWith(QStringLiteral("http://")))
+            rest.remove(0, 7);
+        return QStringLiteral(Z03ULTRA_MIRROR_PREFIX) + rest;
     }
 
     static bool versionNewer(const QString &candidate, const QString &current)

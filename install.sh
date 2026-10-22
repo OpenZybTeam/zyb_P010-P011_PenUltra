@@ -13,7 +13,7 @@ for arg in "$@"; do
         --direct) MIRROR=0 ;;
     esac
 done
-MIRROR_PREFIX="https://down.npee.cn/?"
+MIRROR_PREFIX="https://gh.b52m.cn/"
 FILES="libZ03Plus.so z03plus.rcc Z03Plus setup_ssh.sh update_ssh_status.sh"
 INIT=/etc/init.d/zybz03qt-init
 HOOK_LINE='Z=/home/user/z03plus/Z03Plus; L=/home/user/z03plus/libZ03Plus.so; [ -f "$Z" ] && [ -f "$L" ] && ! grep -q " /usr/bin/Z03 " /proc/mounts && mount --bind "$Z" /usr/bin/Z03'
@@ -21,7 +21,12 @@ HOOK_LINE='Z=/home/user/z03plus/Z03Plus; L=/home/user/z03plus/libZ03Plus.so; [ -
 log() { echo "[z03ultra] $*"; }
 url() {
     if [ "$MIRROR" = 1 ]; then
-        printf '%s%s' "$MIRROR_PREFIX" "$1"
+        u=$1
+        case "$u" in
+            https://*) u=${u#https://} ;;
+            http://*) u=${u#http://} ;;
+        esac
+        printf '%s%s' "$MIRROR_PREFIX" "$u"
     else
         printf '%s' "$1"
     fi
