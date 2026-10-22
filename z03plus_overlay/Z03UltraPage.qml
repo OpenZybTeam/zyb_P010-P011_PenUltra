@@ -31,6 +31,13 @@ Rectangle {
     property bool deviceInfoPageVisible: false
     property bool browserPageVisible: false
     property bool aboutPageVisible: false
+    property string sshRunning: "未知"
+    property string sshIp: "正在读取…"
+    property string sshPort: "22"
+    property string sshUser: "user"
+    property string sshKeyStatus: "未配置"
+    property string sshRoot: "未知"
+    property bool displayInit: false
     property string pendingBrowserUrl: ""
     property string fileClipboard: ""
     property bool fileClipboardCut: false
@@ -439,14 +446,6 @@ property bool aiHistoryVisible: false
             }
         }
     }
-
-    property string sshRunning: "未知"
-    property string sshIp: "正在读取…"
-    property string sshPort: "22"
-    property string sshUser: "user"
-    property string sshKeyStatus: "未配置"
-    property string sshRoot: "未知"
-    property bool displayInit: false
 
     Rectangle {
         id: displayPage

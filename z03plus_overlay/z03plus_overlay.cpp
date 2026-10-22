@@ -2709,7 +2709,7 @@ private:
 };
 
 
-#define Z03ULTRA_VERSION "1.1.0"
+#define Z03ULTRA_VERSION "1.1.1"
 #define Z03ULTRA_REPO "OpenZybTeam/zyb_P010-P011_PenUltra"
 #define Z03ULTRA_MIRROR_PREFIX "https://gh-proxy.com/"
 
@@ -2863,7 +2863,7 @@ private:
         }
         mLatest = tag;
         mBase = QStringLiteral("https://github.com/%1/releases/download/%2")
-                    .arg(QStringLiteral(Z03ULTRA_REPO), tag);
+                    .arg(QStringLiteral(Z03ULTRA_REPO)).arg(tag);
         mBusy = false;
         if (versionNewer(tag, currentVersion())) {
             setState(QStringLiteral("available"), QStringLiteral("发现新版本 %1").arg(tag));
@@ -2910,7 +2910,7 @@ private:
         const QString error = reply->errorString();
         reply->deleteLater();
         if (!ok) {
-            fail(QStringLiteral("下载 %1 失败：%2").arg(name, error));
+            fail(QStringLiteral("下载 %1 失败：%2").arg(name).arg(error));
             return;
         }
         if (mData.isEmpty()) {
