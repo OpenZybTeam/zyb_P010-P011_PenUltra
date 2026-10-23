@@ -228,7 +228,6 @@ property bool aiHistoryVisible: false
                 font.pixelSize: 10
                 font.letterSpacing: 1.5
                 font.weight: Font.DemiBold
-                topPadding: 4
             }
 
             Grid {
@@ -281,7 +280,6 @@ property bool aiHistoryVisible: false
                 font.pixelSize: 10
                 font.letterSpacing: 1.5
                 font.weight: Font.DemiBold
-                topPadding: 8
             }
 
             Grid {
