@@ -25,8 +25,9 @@ Rectangle {
         onBackClicked: root.closeRequested()
     }
     ZybText {
-        text: qsTr("关于 Z03Ultra")
+        text: parent.width < parent.height ? qsTr("关于") : qsTr("关于 Z03Ultra")
         font.styleName: "Bold"
+        font.pixelSize: parent.width < parent.height ? 16 : 28
         anchors.horizontalCenter: parent.horizontalCenter
         anchors.verticalCenter: backButton.verticalCenter
     }

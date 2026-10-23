@@ -58,6 +58,7 @@ Rectangle {
     ZybText {
         text: qsTr("应用商店 · Nix")
         font.styleName: "Bold"
+        font.pixelSize: parent.width < parent.height ? 16 : 24
         anchors.horizontalCenter: parent.horizontalCenter
         anchors.verticalCenter: backButton.verticalCenter
     }
@@ -66,6 +67,7 @@ Rectangle {
                        : (nix.installed ? qsTr("已安装") : qsTr("未安装"))
         color: nix.busy ? "#E0A24A" : (nix.installed ? "#31C7A5" : "#E05A5A")
         font.pixelSize: 12
+        visible: parent.width > 400
         anchors.right: parent.right
         anchors.rightMargin: 14
         anchors.verticalCenter: backButton.verticalCenter

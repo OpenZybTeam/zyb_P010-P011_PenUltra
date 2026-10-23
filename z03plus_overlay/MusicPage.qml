@@ -13,6 +13,7 @@ Rectangle {
     property var tracks: []
     property int currentIndex: -1
     property string status: ""
+    readonly property bool portrait: width < height
     signal closeRequested()
 
     MusicService { id: music }
@@ -115,15 +116,16 @@ Rectangle {
         }
     }
     ZybText {
-        text: qsTr("音乐播放器")
+        text: root.portrait ? qsTr("音乐") : qsTr("音乐播放器")
         font.styleName: "Bold"
+        font.pixelSize: root.portrait ? 16 : 28
         anchors.horizontalCenter: parent.horizontalCenter
         anchors.verticalCenter: backButton.verticalCenter
     }
     BasicButton {
         text: qsTr("刷新")
-        width: 78
-        height: 36
+        width: root.portrait ? 62 : 78
+        height: root.portrait ? 32 : 36
         radius: 6
         checkable: false
         backgroundTheme: root.cardColor

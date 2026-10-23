@@ -15,6 +15,7 @@ Rectangle {
     property bool pageError: false
     property string errorText: ""
     property bool desktopUA: false
+    readonly property bool portrait: width < height
     signal closeRequested()
 
     function showKeyboard() {
@@ -120,7 +121,7 @@ Rectangle {
         font.styleName: "Bold"
         font.pixelSize: 14
         elide: Text.ElideRight
-        width: Math.min(implicitWidth, parent.width - 320)
+        width: Math.max(40, Math.min(implicitWidth, parent.width - (root.portrait ? 150 : 320)))
         anchors.horizontalCenter: parent.horizontalCenter
         anchors.verticalCenter: backButton.verticalCenter
     }
@@ -131,7 +132,8 @@ Rectangle {
         color: web.loading ? "#E0A24A" : (root.pageError ? "#E05A5A" : "#8E9099")
         font.pixelSize: 12
         elide: Text.ElideRight
-        width: 220
+        width: root.portrait ? 70 : 220
+        visible: !root.portrait
         horizontalAlignment: Text.AlignRight
         anchors.right: parent.right
         anchors.rightMargin: 14
@@ -153,7 +155,7 @@ Rectangle {
         BasicButton {
             id: historyBack
             text: "←"
-            width: 42
+            width: root.portrait ? 34 : 42
             height: 32
             radius: 6
             checkable: false
@@ -168,7 +170,8 @@ Rectangle {
         BasicButton {
             id: historyForward
             text: "→"
-            width: 42
+            visible: !root.portrait
+            width: root.portrait ? 34 : 42
             height: 32
             radius: 6
             checkable: false
@@ -182,8 +185,8 @@ Rectangle {
 
         TextInput {
             id: addressInput
-            anchors.left: historyForward.right
-            anchors.leftMargin: 8
+            anchors.left: root.portrait ? historyBack.right : historyForward.right
+            anchors.leftMargin: root.portrait ? 6 : 8
             anchors.right: goButton.left
             anchors.rightMargin: 8
             anchors.verticalCenter: parent.verticalCenter
@@ -213,14 +216,14 @@ Rectangle {
         BasicButton {
             id: goButton
             text: web.loading ? qsTr("停止") : qsTr("打开")
-            width: 66
+            width: root.portrait ? 52 : 66
             height: 32
             radius: 6
             checkable: false
             backgroundTheme: web.loading ? Qt.rgba(0.7, 0.18, 0.18, 0.8)
                                          : Qt.rgba(0.19, 0.62, 0.55, 0.8)
-            anchors.right: refreshButton.left
-            anchors.rightMargin: 6
+            anchors.right: root.portrait ? parent.right : refreshButton.left
+            anchors.rightMargin: root.portrait ? 5 : 6
             anchors.verticalCenter: parent.verticalCenter
             onClicked: {
                 if (web.loading)
@@ -232,7 +235,8 @@ Rectangle {
         BasicButton {
             id: refreshButton
             text: qsTr("刷新")
-            width: 60
+            visible: !root.portrait
+            width: root.portrait ? 44 : 60
             height: 32
             radius: 6
             checkable: false

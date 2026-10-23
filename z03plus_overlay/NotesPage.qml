@@ -53,7 +53,7 @@ Rectangle {
         anchors.verticalCenter: backButton.verticalCenter
     }
 
-    Row {
+    Flow {
         id: toolbar
         anchors.top: backButton.bottom
         anchors.topMargin: 8

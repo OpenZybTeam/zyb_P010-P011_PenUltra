@@ -10,6 +10,7 @@ Rectangle {
     color: "#0F0F0F"
     property color cardColor: Qt.rgba(60 / 255, 61 / 255, 66 / 255, 0.6)
     property bool floating: false
+    readonly property bool portrait: width < height
     signal closeRequested()
 
     MonitorService { id: monitor }
@@ -32,15 +33,15 @@ Rectangle {
     ZybText {
         text: qsTr("资源监视")
         font.styleName: "Bold"
-        font.pixelSize: 21
+        font.pixelSize: root.portrait ? 16 : 21
         anchors.horizontalCenter: parent.horizontalCenter
         anchors.verticalCenter: backButton.verticalCenter
     }
 
     Rectangle {
         id: floatingButton
-        width: 110
-        height: 34
+        width: root.portrait ? 86 : 110
+        height: root.portrait ? 30 : 34
         radius: 17
         anchors.verticalCenter: backButton.verticalCenter
         anchors.right: parent.right
@@ -52,7 +53,7 @@ Rectangle {
             anchors.centerIn: parent
             text: root.floating ? qsTr("浮窗：开") : qsTr("浮窗：关")
             color: root.floating ? "#2AC7A4" : "#EDEDED"
-            font.pixelSize: 14
+            font.pixelSize: root.portrait ? 12 : 14
         }
         MouseArea {
             id: floatingMouse
@@ -69,7 +70,7 @@ Rectangle {
         anchors.leftMargin: 16
         anchors.right: parent.right
         anchors.rightMargin: 16
-        columns: width > 560 ? 4 : 2
+        columns: root.portrait ? 1 : (width > 560 ? 4 : 2)
         spacing: 10
         property real cellWidth: (width - spacing * (columns - 1)) / columns
 
@@ -160,9 +161,9 @@ Rectangle {
         height: 26
         color: "transparent"
         ZybText { x: 4; text: qsTr("进程"); color: "#6F7178"; font.pixelSize: 11 }
-        ZybText { x: parent.width - 152; text: qsTr("PID"); color: "#6F7178"; font.pixelSize: 11 }
-        ZybText { x: parent.width - 96; text: qsTr("CPU"); color: "#6F7178"; font.pixelSize: 11 }
-        ZybText { x: parent.width - 58; text: qsTr("内存"); color: "#6F7178"; font.pixelSize: 11 }
+        ZybText { x: parent.width - (root.portrait ? 126 : 152); text: qsTr("PID"); color: "#6F7178"; font.pixelSize: 11 }
+        ZybText { x: parent.width - (root.portrait ? 72 : 96); text: qsTr("CPU"); color: "#6F7178"; font.pixelSize: 11 }
+        ZybText { x: parent.width - (root.portrait ? 30 : 58); text: qsTr("内存"); color: "#6F7178"; font.pixelSize: root.portrait ? 10 : 11 }
     }
 
     ListView {
@@ -184,7 +185,7 @@ Rectangle {
             color: "#1B1E24"
             ZybText {
                 x: 10
-                width: parent.width - 210
+                width: parent.width - (root.portrait ? 132 : 210)
                 anchors.verticalCenter: parent.verticalCenter
                 text: modelData.name
                 color: "#F2F3F5"
@@ -192,16 +193,16 @@ Rectangle {
                 elide: Text.ElideRight
             }
             ZybText {
-                x: parent.width - 152
-                width: 52
+                x: parent.width - (root.portrait ? 126 : 152)
+                width: root.portrait ? 50 : 52
                 anchors.verticalCenter: parent.verticalCenter
                 text: modelData.pid
                 color: "#8E9099"
                 font.pixelSize: 12
             }
             ZybText {
-                x: parent.width - 96
-                width: 34
+                x: parent.width - (root.portrait ? 72 : 96)
+                width: root.portrait ? 40 : 34
                 anchors.verticalCenter: parent.verticalCenter
                 horizontalAlignment: Text.AlignRight
                 text: modelData.cpu.toFixed(0) + "%"
@@ -209,8 +210,8 @@ Rectangle {
                 font.pixelSize: 12
             }
             ZybText {
-                x: parent.width - 56
-                width: 46
+                x: parent.width - (root.portrait ? 30 : 56)
+                width: root.portrait ? 28 : 46
                 anchors.verticalCenter: parent.verticalCenter
                 horizontalAlignment: Text.AlignRight
                 text: modelData.mem + "M"

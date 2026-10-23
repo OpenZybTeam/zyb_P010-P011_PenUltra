@@ -58,14 +58,15 @@ Rectangle {
     ZybText {
         text: qsTr("存储空间")
         font.styleName: "Bold"
+        font.pixelSize: parent.width < parent.height ? 16 : 28
         anchors.horizontalCenter: parent.horizontalCenter
         anchors.verticalCenter: backButton.verticalCenter
     }
     BasicButton {
         id: refreshButton
         text: qsTr("刷新")
-        width: 78
-        height: 36
+        width: 62
+        height: 32
         radius: 6
         checkable: false
         backgroundTheme: root.cardColor

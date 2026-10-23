@@ -13,6 +13,7 @@ Rectangle {
     property string command: ""
     property string status: ""
     property string activeField: ""
+    readonly property bool portrait: width < height
     signal closeRequested()
 
     ShellService { id: shell }
@@ -52,6 +53,7 @@ Rectangle {
     ZybText {
         text: qsTr("终端 Shell")
         font.styleName: "Bold"
+        font.pixelSize: root.portrait ? 16 : 28
         anchors.horizontalCenter: parent.horizontalCenter
         anchors.verticalCenter: backButton.verticalCenter
     }
@@ -59,6 +61,7 @@ Rectangle {
         text: shell.running ? qsTr("运行中…") : qsTr("空闲")
         color: shell.running ? "#31C7A5" : "#8E9099"
         font.pixelSize: 12
+        visible: !root.portrait
         anchors.right: parent.right
         anchors.rightMargin: 14
         anchors.verticalCenter: backButton.verticalCenter

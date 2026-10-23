@@ -18,8 +18,10 @@ Rectangle {
     property bool baseLandscape: width > height
     property bool effectiveLandscape: baseLandscape ? !portraitMode : portraitMode
     property bool contentRotated: effectiveLandscape !== baseLandscape
-    property int gridColumns: effectiveLandscape ? 3 : 2
-    property real tileWidth: (featureList.width - 12 * (gridColumns - 1)) / gridColumns
+    readonly property bool portraitLayout: !effectiveLandscape
+    property int gridColumns: effectiveLandscape ? 3 : 1
+    property int gridGap: effectiveLandscape ? 10 : 8
+    property real tileWidth: (featureList.width - gridGap * (gridColumns - 1)) / gridColumns
     property int sideMargin: contentRotated ? 12 : 20
     property bool sshPageVisible: false
     property bool fileManagerVisible: false
@@ -132,8 +134,8 @@ property bool aiHistoryVisible: false
     ZybKeyBoard {
         id: overlayKeyboard
         z: 300
-        width: root.width
-        height: root.height
+        width: pageContent.width
+        height: Math.min(pageContent.height, Style.gHeight)
         y: Style.gHeight
         visible: !root.vkReady && y < Style.gHeight
         onCommitInput: {
@@ -202,22 +204,22 @@ property bool aiHistoryVisible: false
     }
 
     ZybText {
-        text: qsTr("Z03Ultra v") + updater.currentVersion
+        text: root.portraitLayout ? ("v" + updater.currentVersion) : (qsTr("Z03Ultra v") + updater.currentVersion)
         font.styleName: "Bold"
-        font.pixelSize: root.contentRotated ? 18 : 21
+        font.pixelSize: root.portraitLayout ? 15 : (root.contentRotated ? 18 : 21)
         anchors.horizontalCenter: parent.horizontalCenter
         anchors.verticalCenter: backButton.verticalCenter
     }
 
     Rectangle {
         id: orientButton
-        width: root.contentRotated ? 84 : 96
-        height: root.contentRotated ? 34 : 38
+        width: root.portraitLayout ? 70 : (root.contentRotated ? 84 : 96)
+        height: root.portraitLayout ? 30 : (root.contentRotated ? 34 : 38)
         radius: 17
         anchors.top: parent.top
         anchors.topMargin: 10
         anchors.right: parent.right
-        anchors.rightMargin: 12
+        anchors.rightMargin: root.portraitLayout ? 10 : 12
         color: orientMouse.pressed ? "#3B3D45" : "#26272C"
         border.color: "#3C3E46"
         border.width: 1
@@ -225,7 +227,7 @@ property bool aiHistoryVisible: false
             anchors.centerIn: parent
             text: root.effectiveLandscape ? qsTr("竖屏") : qsTr("横屏")
             color: "#EDEDED"
-            font.pixelSize: 15
+            font.pixelSize: root.portraitLayout ? 13 : 15
         }
         MouseArea {
             id: orientMouse
@@ -267,11 +269,11 @@ property bool aiHistoryVisible: false
                 id: featureGrid
                 width: parent.width
                 columns: root.gridColumns
-                spacing: root.gridColumns > 1 ? 10 : 8
+                spacing: root.gridGap
 
                 MaterialTile {
                     width: root.tileWidth
-                    compact: root.contentRotated
+                    compact: root.portraitLayout
                     text: qsTr("浏览器")
                     subtitle: qsTr("内置 WebKit 引擎")
                     accent: "#4C8DFF"
@@ -279,7 +281,7 @@ property bool aiHistoryVisible: false
                 }
                 MaterialTile {
                     width: root.tileWidth
-                    compact: root.contentRotated
+                    compact: root.portraitLayout
                     text: qsTr("手机互传")
                     subtitle: qsTr("同一 Wi-Fi 上传下载")
                     accent: "#2AC7A4"
@@ -287,7 +289,7 @@ property bool aiHistoryVisible: false
                 }
                 MaterialTile {
                     width: root.tileWidth
-                    compact: root.contentRotated
+                    compact: root.portraitLayout
                     text: qsTr("手写便签")
                     subtitle: qsTr("画笔记录，导出 PNG")
                     accent: "#F2B34C"
@@ -295,7 +297,7 @@ property bool aiHistoryVisible: false
                 }
                 MaterialTile {
                     width: root.tileWidth
-                    compact: root.contentRotated
+                    compact: root.portraitLayout
                     text: qsTr("应用启动器")
                     subtitle: qsTr("Nix 与系统应用")
                     accent: "#8E7BFF"
@@ -303,7 +305,7 @@ property bool aiHistoryVisible: false
                 }
                 MaterialTile {
                     width: root.tileWidth
-                    compact: root.contentRotated
+                    compact: root.portraitLayout
                     text: qsTr("文件管理")
                     subtitle: qsTr("浏览、上传与整理")
                     accent: "#2AC7A4"
@@ -311,7 +313,7 @@ property bool aiHistoryVisible: false
                 }
                 MaterialTile {
                     width: root.tileWidth
-                    compact: root.contentRotated
+                    compact: root.portraitLayout
                     text: qsTr("文本阅读")
                     subtitle: qsTr("打开 txt 文档")
                     accent: "#8E9099"
@@ -319,7 +321,7 @@ property bool aiHistoryVisible: false
                 }
                 MaterialTile {
                     width: root.tileWidth
-                    compact: root.contentRotated
+                    compact: root.portraitLayout
                     text: qsTr("AI 对话")
                     subtitle: qsTr("本地模型对话")
                     accent: "#B388FF"
@@ -340,11 +342,11 @@ property bool aiHistoryVisible: false
                 id: settingGrid
                 width: parent.width
                 columns: root.gridColumns
-                spacing: root.gridColumns > 1 ? 10 : 8
+                spacing: root.gridGap
 
                 MaterialTile {
                     width: root.tileWidth
-                    compact: root.contentRotated
+                    compact: root.portraitLayout
                     text: qsTr("显示与灯光")
                     subtitle: qsTr("亮度、休眠与灯效")
                     accent: "#4DD0E1"
@@ -352,7 +354,7 @@ property bool aiHistoryVisible: false
                 }
                 MaterialTile {
                     width: root.tileWidth
-                    compact: root.contentRotated
+                    compact: root.portraitLayout
                     text: qsTr("存储空间")
                     subtitle: qsTr("磁盘占用与清理")
                     accent: "#4C8DFF"
@@ -360,7 +362,7 @@ property bool aiHistoryVisible: false
                 }
                 MaterialTile {
                     width: root.tileWidth
-                    compact: root.contentRotated
+                    compact: root.portraitLayout
                     text: qsTr("Nix 商店")
                     subtitle: qsTr("搜索与安装软件包")
                     accent: "#2AC7A4"
@@ -368,7 +370,7 @@ property bool aiHistoryVisible: false
                 }
                 MaterialTile {
                     width: root.tileWidth
-                    compact: root.contentRotated
+                    compact: root.portraitLayout
                     text: qsTr("在线音乐")
                     subtitle: qsTr("搜索与播放")
                     accent: "#FF7A85"
@@ -376,7 +378,7 @@ property bool aiHistoryVisible: false
                 }
                 MaterialTile {
                     width: root.tileWidth
-                    compact: root.contentRotated
+                    compact: root.portraitLayout
                     text: qsTr("资源监视")
                     subtitle: qsTr("CPU 与内存实时占用")
                     accent: "#FFB74D"
@@ -384,7 +386,7 @@ property bool aiHistoryVisible: false
                 }
                 MaterialTile {
                     width: root.tileWidth
-                    compact: root.contentRotated
+                    compact: root.portraitLayout
                     text: qsTr("录音机")
                     subtitle: qsTr("麦克风录音")
                     accent: "#F2B34C"
@@ -392,7 +394,7 @@ property bool aiHistoryVisible: false
                 }
                 MaterialTile {
                     width: root.tileWidth
-                    compact: root.contentRotated
+                    compact: root.portraitLayout
                     text: qsTr("终端")
                     subtitle: qsTr("本地 Shell")
                     accent: "#8E9099"
@@ -400,7 +402,7 @@ property bool aiHistoryVisible: false
                 }
                 MaterialTile {
                     width: root.tileWidth
-                    compact: root.contentRotated
+                    compact: root.portraitLayout
                     text: qsTr("ADB / SSH")
                     subtitle: qsTr("远程连接与密钥")
                     accent: "#FF7597"
@@ -408,7 +410,7 @@ property bool aiHistoryVisible: false
                 }
                 MaterialTile {
                     width: root.tileWidth
-                    compact: root.contentRotated
+                    compact: root.portraitLayout
                     text: qsTr("设备信息")
                     subtitle: qsTr("硬件与系统版本")
                     accent: "#4C8DFF"
@@ -416,7 +418,7 @@ property bool aiHistoryVisible: false
                 }
                 MaterialTile {
                     width: root.tileWidth
-                    compact: root.contentRotated
+                    compact: root.portraitLayout
                     text: qsTr("关于 Z03Ultra")
                     subtitle: qsTr("版本、更新与许可")
                     accent: "#F2B34C"
@@ -575,16 +577,18 @@ property bool aiHistoryVisible: false
             onBackClicked: root.sshPageVisible = false
         }
         ZybText {
-            text: qsTr("SSH 远程连接")
+            text: root.portraitLayout ? "SSH" : qsTr("SSH 远程连接")
             font.styleName: "Bold"
+            font.pixelSize: root.portraitLayout ? 16 : 28
             anchors.horizontalCenter: parent.horizontalCenter
-            anchors.top: parent.top; anchors.topMargin: 18
+            anchors.top: parent.top; anchors.topMargin: root.portraitLayout ? 20 : 18
         }
         BasicButton {
             text: "⏻"
-            anchors.right: refreshButton.left; anchors.rightMargin: 10
+            anchors.right: refreshButton.left; anchors.rightMargin: root.portraitLayout ? 6 : 10
             anchors.top: parent.top; anchors.topMargin: 9
-            width: 56; height: 48; radius: 24; checkable: false
+            width: root.portraitLayout ? 44 : 56; height: root.portraitLayout ? 38 : 48
+            radius: 24; checkable: false
             backgroundTheme: root.cardColor
             onClicked: {
                 if (root.sshRunning === qsTr("已开启")) {
@@ -601,9 +605,10 @@ property bool aiHistoryVisible: false
         BasicButton {
             id: refreshButton
             text: "↻"
-            anchors.right: parent.right; anchors.rightMargin: 16
+            anchors.right: parent.right; anchors.rightMargin: root.portraitLayout ? 10 : 16
             anchors.top: parent.top; anchors.topMargin: 9
-            width: 52; height: 48; radius: 24; checkable: false
+            width: root.portraitLayout ? 44 : 52; height: root.portraitLayout ? 38 : 48
+            radius: 24; checkable: false
             backgroundTheme: root.cardColor
             onClicked: root.refreshSshStatus()
         }
@@ -656,8 +661,9 @@ property bool aiHistoryVisible: false
             onBackClicked: root.displayPageVisible = false
         }
         ZybText {
-            text: qsTr("显示与灯光")
+            text: root.portraitLayout ? qsTr("显示") : qsTr("显示与灯光")
             font.styleName: "Bold"
+            font.pixelSize: root.portraitLayout ? 16 : 28
             anchors.horizontalCenter: parent.horizontalCenter
             anchors.verticalCenter: displayBackButton.verticalCenter
         }
@@ -725,10 +731,10 @@ property bool aiHistoryVisible: false
             anchors.fill: parent
             clip: true; model: root.fileEntries
             header: Item {
-                width: fileList.width; height: 152
+                width: fileList.width; height: root.portraitLayout ? 190 : 152
                 ZybBackButton { anchors.top: parent.top; anchors.topMargin: 10; anchors.left: parent.left; anchors.leftMargin: 10; onBackClicked: { root.fileManagerVisible = false; root.fileClipboard = "" } }
-                ZybText { text: qsTr("文件管理"); font.styleName: "Bold"; anchors.horizontalCenter: parent.horizontalCenter; anchors.top: parent.top; anchors.topMargin: 18 }
-                BasicButton { text: qsTr("上一级"); anchors.right: parent.right; anchors.rightMargin: 15; anchors.top: parent.top; anchors.topMargin: 10; width: 86; height: 45; radius: 8; checkable: false; enabled: fileService.canGoUp(root.currentPath); backgroundTheme: root.cardColor; onClicked: root.openFiles(fileService.parentPath(root.currentPath)) }
+                ZybText { text: qsTr("文件管理"); font.styleName: "Bold"; font.pixelSize: root.portraitLayout ? 17 : 28; anchors.horizontalCenter: parent.horizontalCenter; anchors.top: parent.top; anchors.topMargin: root.portraitLayout ? 22 : 18 }
+                BasicButton { text: qsTr("上一级"); anchors.right: parent.right; anchors.rightMargin: root.portraitLayout ? 10 : 15; anchors.top: parent.top; anchors.topMargin: 10; width: root.portraitLayout ? 70 : 86; height: root.portraitLayout ? 38 : 45; radius: 8; checkable: false; enabled: fileService.canGoUp(root.currentPath); backgroundTheme: root.cardColor; onClicked: root.openFiles(fileService.parentPath(root.currentPath)) }
                 ZybText { text: root.currentPath; elide: Text.ElideMiddle; color: "#B8B8B8"; font.pixelSize: 15; anchors.top: parent.top; anchors.topMargin: 62; anchors.left: parent.left; anchors.leftMargin: 20; anchors.right: parent.right; anchors.rightMargin: 20 }
                 Row {
                     anchors.left: parent.left; anchors.leftMargin: 20
@@ -738,8 +744,9 @@ property bool aiHistoryVisible: false
                     BasicButton { width: 92; height: 38; radius: 6; text: qsTr("粘贴"); checkable: false; enabled: root.fileClipboard.length > 0; backgroundTheme: root.cardColor; onClicked: root.pasteFiles() }
                 }
                 Row {
-                    anchors.right: parent.right; anchors.rightMargin: 15
-                    anchors.top: parent.top; anchors.topMargin: 96
+                    anchors.right: root.portraitLayout ? undefined : parent.right; anchors.rightMargin: 15
+                    anchors.left: root.portraitLayout ? parent.left : undefined; anchors.leftMargin: 20
+                    anchors.top: parent.top; anchors.topMargin: root.portraitLayout ? 142 : 96
                     spacing: 6
                     BasicButton { text: root.fileOrder === 0 ? qsTr("名称") : (root.fileOrder === 1 ? qsTr("时间") : qsTr("大小")); width: 72; height: 38; radius: 6; checkable: false; backgroundTheme: root.cardColor; onClicked: { root.fileOrder = (root.fileOrder + 1) % 3; root.openFiles(root.currentPath) } }
                     BasicButton { text: root.fileReversed ? "↓" : "↑"; width: 42; height: 38; radius: 6; checkable: false; backgroundTheme: root.cardColor; onClicked: { root.fileReversed = !root.fileReversed; root.openFiles(root.currentPath) } }
@@ -867,7 +874,7 @@ property bool aiHistoryVisible: false
             Item {
                 width: textFlick.width; height: 65
                 ZybBackButton { anchors.top: parent.top; anchors.topMargin: 10; anchors.left: parent.left; anchors.leftMargin: 10; onBackClicked: { root.readerEditing = false; root.readerVisible = false; root.hideKeyboard() } }
-                ZybText { text: textFileService.fileName(root.readerPath); font.styleName: "Bold"; elide: Text.ElideMiddle; anchors.top: parent.top; anchors.topMargin: 18; anchors.left: parent.left; anchors.leftMargin: 70; anchors.right: parent.right; anchors.rightMargin: 200 }
+                ZybText { text: textFileService.fileName(root.readerPath); font.styleName: "Bold"; font.pixelSize: root.portraitLayout ? 16 : 28; elide: Text.ElideMiddle; visible: !(root.portraitLayout && root.readerEditing); anchors.top: parent.top; anchors.topMargin: root.portraitLayout ? 20 : 18; anchors.left: parent.left; anchors.leftMargin: 70; anchors.right: parent.right; anchors.rightMargin: root.portraitLayout ? 88 : 200 }
                 BasicButton { id: editButton; visible: !root.readerEditing; text: qsTr("编辑"); anchors.right: parent.right; anchors.rightMargin: 14; anchors.top: parent.top; anchors.topMargin: 10; width: 70; height: 42; radius: 7; checkable: false; backgroundTheme: root.cardColor; onClicked: root.beginEdit() }
                 BasicButton { visible: root.readerEditing; text: qsTr("保存"); anchors.right: parent.right; anchors.rightMargin: 14; anchors.top: parent.top; anchors.topMargin: 10; width: 70; height: 42; radius: 7; checkable: false; backgroundTheme: root.cardColor; onClicked: root.saveEdit() }
                 BasicButton { visible: root.readerEditing; text: qsTr("取消"); anchors.right: parent.right; anchors.rightMargin: 92; anchors.top: parent.top; anchors.topMargin: 10; width: 70; height: 42; radius: 7; checkable: false; backgroundTheme: root.cardColor; onClicked: root.cancelEdit() }
@@ -1603,6 +1610,7 @@ property bool aiHistoryVisible: false
     }
     Text {
         id: tip
+        parent: pageContent
         visible: false
         z: 400
         anchors.horizontalCenter: parent.horizontalCenter
@@ -1615,6 +1623,7 @@ property bool aiHistoryVisible: false
 
     Item {
         id: openZybTeamWatermarkLayer
+        parent: pageContent
         z: 5
         anchors.fill: parent
 
@@ -1632,7 +1641,7 @@ property bool aiHistoryVisible: false
                     text: "OpenZybTeam"
                     color: "#FFFFFF"
                     opacity: 0.10
-                    font.pixelSize: 24
+                    font.pixelSize: Math.min(24, Math.max(10, width / 6))
                     font.styleName: "Bold"
                     font.letterSpacing: 2
                     rotation: -18
@@ -1646,6 +1655,7 @@ property bool aiHistoryVisible: false
 
     Loader {
         id: vkLoader
+        parent: pageContent
         anchors.fill: parent
         z: 4000
         source: "qrc:/ZybQmlFiles/ZybSet/VkPanel.qml"
