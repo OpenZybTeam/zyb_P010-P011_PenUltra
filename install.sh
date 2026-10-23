@@ -252,7 +252,8 @@ if [ -z "$PID" ]; then
     log "守护循环未拉起应用，手动启动副本"
     cd /home || exit 1
     if command -v setsid >/dev/null 2>&1; then D=setsid; else D=nohup; fi
-    HOME=/home XDG_RUNTIME_DIR=/run/user/0 nohup $D "$DEST/Z03Plus" -platform wayland \
+    HOME=/home XDG_RUNTIME_DIR=/run/user/0 QT_LOGGING_RULES="qt.virtualkeyboard*=true" \
+        nohup $D "$DEST/Z03Plus" -platform wayland \
         >"$DEST/z03plus.out" 2>&1 </dev/null &
     sleep 12
     PID=$(pidof Z03)

@@ -2729,7 +2729,7 @@ private:
 };
 
 
-#define Z03ULTRA_VERSION "1.5.1"
+#define Z03ULTRA_VERSION "1.5.2"
 #define Z03ULTRA_REPO "OpenZybTeam/zyb_P010-P011_PenUltra"
 #define Z03ULTRA_MIRROR_PREFIX "https://git.yylx.win/"
 
@@ -3835,7 +3835,7 @@ private:
         QFile file(QStringLiteral("/proc/uptime"));
         if (!file.open(QIODevice::ReadOnly))
             return;
-        const double seconds = QString::fromUtf8(file.readAll()).trimmed().split(' ').value(0).toDouble();
+        const double seconds = z03SplitChar(QString::fromUtf8(file.readAll()).trimmed(), QChar(' ')).value(0).toDouble();
         file.close();
         const int total = int(seconds);
         const int days = total / 86400;
