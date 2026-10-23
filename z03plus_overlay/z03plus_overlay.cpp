@@ -2788,9 +2788,7 @@ public:
             fail(QStringLiteral("无法创建临时目录"));
             return;
         }
-        mQueue = QStringList() << QStringLiteral("SHA256SUMS") << QStringLiteral("libZ03Plus.so")
-                               << QStringLiteral("z03plus.rcc") << QStringLiteral("Z03Plus")
-                               << QStringLiteral("setup_ssh.sh") << QStringLiteral("update_ssh_status.sh");
+        mQueue = QStringList() << QStringLiteral("SHA256SUMS") << QStringLiteral("z03ultra.zip");
         mSums.clear();
         mData.clear();
         mIndex = 0;
@@ -2815,6 +2813,40 @@ private:
         else if (rest.startsWith(QStringLiteral("http://")))
             rest.remove(0, 7);
         return QStringLiteral(Z03ULTRA_MIRROR_PREFIX) + rest;
+    }
+
+    static QStringList installFiles()
+    {
+        return QStringList() << QStringLiteral("libZ03Plus.so") << QStringLiteral("z03plus.rcc")
+                             << QStringLiteral("Z03Plus") << QStringLiteral("setup_ssh.sh")
+                             << QStringLiteral("update_ssh_status.sh");
+    }
+
+    static bool extractPackage(const QString &zip, const QString &dir, QString *error)
+    {
+        QDir().mkpath(dir);
+        QString program;
+        QStringList args;
+        if (!QStandardPaths::findExecutable(QStringLiteral("unzip")).isEmpty()) {
+            program = QStringLiteral("unzip");
+            args << QStringLiteral("-o") << QStringLiteral("-q") << zip << QStringLiteral("-d") << dir;
+        } else if (!QStandardPaths::findExecutable(QStringLiteral("busybox")).isEmpty()) {
+            program = QStringLiteral("busybox");
+            args << QStringLiteral("unzip") << QStringLiteral("-o") << QStringLiteral("-q") << zip
+                 << QStringLiteral("-d") << dir;
+        } else {
+            *error = QStringLiteral("设备缺少 unzip，无法解压更新包");
+            return false;
+        }
+        QProcess process;
+        process.start(program, args);
+        if (!process.waitForFinished(180000) || process.exitStatus() != QProcess::NormalExit
+            || process.exitCode() != 0) {
+            *error = QStringLiteral("解压更新包失败：%1")
+                         .arg(QString::fromLocal8Bit(process.readAllStandardError()).trimmed());
+            return false;
+        }
+        return true;
     }
 
     static bool versionNewer(const QString &candidate, const QString &current)
@@ -3058,7 +3090,21 @@ private:
         setState(QStringLiteral("installing"), QStringLiteral("校验通过，正在安装…"));
         const QString dest = QStringLiteral("/home/user/z03plus");
 
-        QFile exe(mTmp + QStringLiteral("/Z03Plus"));
+        const QString pkg = mTmp + QStringLiteral("/pkg");
+        QString unpackError;
+        if (!extractPackage(mTmp + QStringLiteral("/z03ultra.zip"), pkg, &unpackError)) {
+            fail(unpackError);
+            return;
+        }
+        const QStringList files = installFiles();
+        for (const QString &name : files) {
+            if (!QFile::exists(pkg + QLatin1Char('/') + name)) {
+                fail(QStringLiteral("更新包缺少 %1").arg(name));
+                return;
+            }
+        }
+
+        QFile exe(pkg + QStringLiteral("/Z03Plus"));
         if (!exe.open(QIODevice::ReadOnly)) {
             fail(QStringLiteral("读取 Z03Plus 失败"));
             return;
@@ -3077,9 +3123,7 @@ private:
         }
 
         QDir().mkpath(dest + QStringLiteral("/backup"));
-        for (const QString &name : mQueue) {
-            if (name == QStringLiteral("SHA256SUMS"))
-                continue;
+        for (const QString &name : files) {
             const QString target = dest + QLatin1Char('/') + name;
             if (QFile::exists(target)) {
                 QFile::remove(dest + QStringLiteral("/backup/") + name);
@@ -3087,10 +3131,8 @@ private:
             }
         }
 
-        for (const QString &name : mQueue) {
-            if (name == QStringLiteral("SHA256SUMS"))
-                continue;
-            const QByteArray source = QFile::encodeName(mTmp + QLatin1Char('/') + name);
+        for (const QString &name : files) {
+            const QByteArray source = QFile::encodeName(pkg + QLatin1Char('/') + name);
             const QByteArray target = QFile::encodeName(dest + QLatin1Char('/') + name);
             if (std::rename(source.constData(), target.constData()) != 0) {
                 fail(QStringLiteral("写入 %1 失败").arg(name));

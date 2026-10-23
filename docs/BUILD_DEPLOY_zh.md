@@ -434,7 +434,7 @@ model=gpt-3.5-turbo
 | 直连 | `https://api.github.com/repos/<repo>/releases/latest` | `https://github.com/<repo>/releases/download/<tag>/<file>` |
 | 镜像 | API 始终直连 `https://api.github.com/...` | `https://git.yylx.win/github.com/...` |
 
-应用内安装会依次下载 `SHA256SUMS`、`libZ03Plus.so`、`z03plus.rcc`、`Z03Plus`、`setup_ssh.sh`、`update_ssh_status.sh`，逐个校验 SHA256 后原子替换 `/home/user/z03plus/` 下的文件，备份到 `backup/`，确认启动钩子存在，然后由独立 shell 停止守护脚本、解除旧 bind mount、重新挂载新副本并恢复守护循环。设备缺少 CA 时请求会忽略证书错误，与 `install.sh` 的 `curl -k` 回退保持一致。
+应用内安装会先下载 `SHA256SUMS` 与 `z03ultra.zip`，校验整包 SHA256 后调用 `unzip`（或 `busybox unzip`）解压，再原子替换 `/home/user/z03plus/` 下的文件，备份到 `backup/`，确认启动钩子存在，然后由独立 shell 停止守护脚本、解除旧 bind mount、重新挂载新副本并恢复守护循环。设备缺少 CA 时请求会忽略证书错误，与 `install.sh` 的 `curl -k` 回退保持一致。
 
 脚本侧：
 

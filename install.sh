@@ -14,6 +14,7 @@ for arg in "$@"; do
     esac
 done
 MIRROR_PREFIX="https://git.yylx.win/"
+PACKAGE=z03ultra.zip
 FILES="libZ03Plus.so z03plus.rcc Z03Plus setup_ssh.sh update_ssh_status.sh"
 INIT=/etc/init.d/zybz03qt-init
 HOOK_LINE='Z=/home/user/z03plus/Z03Plus; L=/home/user/z03plus/libZ03Plus.so; [ -f "$Z" ] && [ -f "$L" ] && ! grep -q " /usr/bin/Z03 " /proc/mounts && mount --bind "$Z" /usr/bin/Z03'
@@ -121,6 +122,16 @@ verify_asset() {
     [ "$want" = "$got" ]
 }
 
+unzip_cmd() {
+    if command -v unzip >/dev/null 2>&1; then
+        unzip -o -q "$1" -d "$2"
+    elif command -v busybox >/dev/null 2>&1 && busybox --list 2>/dev/null | grep -qx unzip; then
+        busybox unzip -o -q "$1" -d "$2"
+    else
+        return 127
+    fi
+}
+
 TAG=
 if [ -n "${Z03ULTRA_BASE:-}" ]; then
     BASE=$Z03ULTRA_BASE
@@ -144,24 +155,28 @@ else
 fi
 log "下载源: $(url "$BASE")"
 
-log "下载资产: $FILES"
+log "下载资产: $PACKAGE"
 fetch_asset SHA256SUMS "$(url "$BASE/SHA256SUMS")" "$TMP/SHA256SUMS" "$BASE/SHA256SUMS" || die "下载 SHA256SUMS 失败"
+fetch_asset "$PACKAGE" "$(url "$BASE/$PACKAGE")" "$TMP/$PACKAGE" "$BASE/$PACKAGE" || die "下载 $PACKAGE 失败"
+
+verify_asset "$PACKAGE" && log "已校验 $PACKAGE"
+if [ "$?" != 0 ]; then
+    verify_asset "$PACKAGE"
+    [ "$?" = 2 ] && die "SHA256SUMS 中没有 $PACKAGE"
+    log "$PACKAGE 校验失败，重新下载"
+    fetch_fresh "$PACKAGE" "$(url "$BASE/$PACKAGE")" "$TMP/$PACKAGE" "$BASE/$PACKAGE" || die "下载 $PACKAGE 失败"
+    verify_asset "$PACKAGE" || die "$PACKAGE 校验失败"
+    log "已校验 $PACKAGE"
+fi
+
+PKG="$TMP/pkg"
+mkdir -p "$PKG" || die "无法创建解压目录"
+unzip_cmd "$TMP/$PACKAGE" "$PKG" || die "解压失败，请确认设备具备 unzip"
 for f in $FILES; do
-    fetch_asset "$f" "$(url "$BASE/$f")" "$TMP/$f" "$BASE/$f" || die "下载 $f 失败"
+    [ -f "$PKG/$f" ] || die "$PACKAGE 中缺少 $f"
 done
 
-for f in $FILES; do
-    verify_asset "$f" && { log "已校验 $f"; continue; }
-    verify_asset "$f"
-    [ "$?" = 2 ] && die "SHA256SUMS 中没有 $f"
-    log "$f 校验失败，重新下载"
-    : > "$TMP/$f"
-    fetch_fresh "$f" "$(url "$BASE/$f")" "$TMP/$f" || die "下载 $f 失败"
-    verify_asset "$f" || die "$f 校验失败"
-    log "已校验 $f"
-done
-
-grep -q 'libZ03Plus.so' "$TMP/Z03Plus" || die "Z03Plus 未包含 DT_NEEDED 依赖"
+grep -q 'libZ03Plus.so' "$PKG/Z03Plus" || die "Z03Plus 未包含 DT_NEEDED 依赖"
 
 mkdir -p "$DEST/backup"
 for f in $FILES; do
@@ -169,7 +184,7 @@ for f in $FILES; do
 done
 
 for f in $FILES; do
-    cp -f "$TMP/$f" "$DEST/$f" || die "写入 $DEST/$f 失败"
+    cp -f "$PKG/$f" "$DEST/$f" || die "写入 $DEST/$f 失败"
 done
 chmod 755 "$DEST/libZ03Plus.so" "$DEST/Z03Plus" "$DEST/setup_ssh.sh" "$DEST/update_ssh_status.sh"
 chmod 644 "$DEST/z03plus.rcc"

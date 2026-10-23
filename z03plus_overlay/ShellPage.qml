@@ -143,7 +143,6 @@ Rectangle {
             onClicked: {
                 commandInput.forceActiveFocus()
                 root.activeField = "command"
-                overlayShellKeyboard.showKeyboard()
             }
         }
         ZybText {
@@ -243,21 +242,6 @@ Rectangle {
         }
     }
 
-    ZybKeyBoard {
-        id: overlayShellKeyboard
-        z: 300
-        width: root.width
-        height: root.height
-        y: Style.gHeight
-        visible: y < Style.gHeight
-        onCommitInput: {
-            if (root.activeField === "command") {
-                commandInput.text = t1
-                commandInput.cursorPosition = t1.length
-                root.command = t1
-            }
-        }
-    }
 
     Component.onCompleted: commandInput.forceActiveFocus()
 }

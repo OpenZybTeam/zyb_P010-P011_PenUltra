@@ -190,7 +190,6 @@ Rectangle {
             onClicked: {
                 searchInput.forceActiveFocus()
                 root.activeField = "search"
-                overlayNixKeyboard.showKeyboard()
             }
         }
         ZybText {
@@ -248,7 +247,6 @@ Rectangle {
             onClicked: {
                 attributeInput.forceActiveFocus()
                 root.activeField = "attribute"
-                overlayNixKeyboard.showKeyboard()
             }
         }
         ZybText {
@@ -411,25 +409,6 @@ Rectangle {
         onInstalledChanged: if (nix.installed) root.status = qsTr("Nix 已就绪")
     }
 
-    ZybKeyBoard {
-        id: overlayNixKeyboard
-        z: 300
-        width: root.width
-        height: root.height
-        y: Style.gHeight
-        visible: y < Style.gHeight
-        onCommitInput: {
-            if (root.activeField === "search") {
-                searchInput.text = t1
-                searchInput.cursorPosition = t1.length
-                root.searchText = t1
-            } else if (root.activeField === "attribute") {
-                attributeInput.text = t1
-                attributeInput.cursorPosition = t1.length
-                root.attribute = t1
-            }
-        }
-    }
 
     Timer {
         interval: 1000

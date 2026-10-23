@@ -95,14 +95,42 @@ property bool aiHistoryVisible: false
         rotation: root.contentRotated ? 90 : 0
         transformOrigin: Item.Center
 
-    // 复用原厂内置键盘，避免依赖设备缺失的 QtQuick.VirtualKeyboard。
+    // 全局 Qt Virtual Keyboard：所有输入框聚焦即弹出。
+    readonly property bool vkReady: vkLoader.status === Loader.Ready && vkLoader.item !== null
+
+    Loader {
+        id: vkLoader
+        anchors.fill: parent
+        z: 4000
+        source: "qrc:/ZybQmlFiles/ZybSet/VkPanel.qml"
+        active: true
+        asynchronous: false
+        onStatusChanged: {
+            if (status === Loader.Error)
+                console.log("z03ultra: QtVirtualKeyboard unavailable, fallback to builtin keyboard")
+        }
+    }
+
+    function showKeyboard() {
+        if (!root.vkReady)
+            overlayKeyboard.showKeyboard()
+    }
+
+    function hideKeyboard() {
+        if (root.vkReady)
+            Qt.inputMethod.hide()
+        else
+            overlayKeyboard.hideKeyboard()
+    }
+
+    // 仅在 Qt Virtual Keyboard 不可用时回退到原厂键盘。
     ZybKeyBoard {
         id: overlayKeyboard
         z: 300
         width: root.width
         height: root.height
         y: Style.gHeight
-        visible: y < Style.gHeight
+        visible: !root.vkReady && y < Style.gHeight
         onCommitInput: {
             if (root.aiPageVisible) {
                 root.aiInput = t1
@@ -728,7 +756,7 @@ property bool aiHistoryVisible: false
                     anchors.fill: parent
                     onClicked: {
                         renameInput.forceActiveFocus()
-                        overlayKeyboard.showKeyboard()
+                        root.showKeyboard()
                     }
                 }
             }
@@ -749,7 +777,7 @@ property bool aiHistoryVisible: false
             Rectangle {
                 anchors.left: parent.left; anchors.leftMargin: 20; anchors.right: parent.right; anchors.rightMargin: 20; anchors.top: parent.top; anchors.topMargin: 55; height: 46; radius: 5; color: "#151619"
                 TextInput { id: newFolderInput; anchors.fill: parent; anchors.margins: 8; color: "white"; font.pixelSize: 19; text: root.newFolderValue; selectByMouse: true; onTextChanged: root.newFolderValue = text }
-                MouseArea { anchors.fill: parent; onClicked: { newFolderInput.forceActiveFocus(); overlayKeyboard.showKeyboard() } }
+                MouseArea { anchors.fill: parent; onClicked: { newFolderInput.forceActiveFocus(); root.showKeyboard() } }
             }
             BasicButton { text: qsTr("取消"); anchors.left: parent.left; anchors.leftMargin: 20; anchors.bottom: parent.bottom; anchors.bottomMargin: 16; width: 110; height: 48; radius: 7; checkable: false; backgroundTheme: root.cardColor; onClicked: root.newFolderDialogVisible = false }
             BasicButton { text: qsTr("确定"); anchors.right: parent.right; anchors.rightMargin: 20; anchors.bottom: parent.bottom; anchors.bottomMargin: 16; width: 110; height: 48; radius: 7; checkable: false; backgroundTheme: root.cardColor; onClicked: { var values = fileService.createDirectory(root.currentPath, root.newFolderValue); if (values.ok) root.openFiles(root.currentPath); else { root.fileStatus = values.error; root.showTip(values.error) } root.newFolderDialogVisible = false } }
@@ -785,7 +813,7 @@ property bool aiHistoryVisible: false
             flickableDirection: Flickable.VerticalFlick
             Item {
                 width: textFlick.width; height: 65
-                ZybBackButton { anchors.top: parent.top; anchors.topMargin: 10; anchors.left: parent.left; anchors.leftMargin: 10; onBackClicked: { root.readerEditing = false; root.readerVisible = false; overlayKeyboard.hideKeyboard() } }
+                ZybBackButton { anchors.top: parent.top; anchors.topMargin: 10; anchors.left: parent.left; anchors.leftMargin: 10; onBackClicked: { root.readerEditing = false; root.readerVisible = false; root.hideKeyboard() } }
                 ZybText { text: textFileService.fileName(root.readerPath); font.styleName: "Bold"; elide: Text.ElideMiddle; anchors.top: parent.top; anchors.topMargin: 18; anchors.left: parent.left; anchors.leftMargin: 70; anchors.right: parent.right; anchors.rightMargin: 200 }
                 BasicButton { id: editButton; visible: !root.readerEditing; text: qsTr("编辑"); anchors.right: parent.right; anchors.rightMargin: 14; anchors.top: parent.top; anchors.topMargin: 10; width: 70; height: 42; radius: 7; checkable: false; backgroundTheme: root.cardColor; onClicked: root.beginEdit() }
                 BasicButton { visible: root.readerEditing; text: qsTr("保存"); anchors.right: parent.right; anchors.rightMargin: 14; anchors.top: parent.top; anchors.topMargin: 10; width: 70; height: 42; radius: 7; checkable: false; backgroundTheme: root.cardColor; onClicked: root.saveEdit() }
@@ -799,9 +827,9 @@ property bool aiHistoryVisible: false
                 height: Math.max(contentHeight, textFlick.height - 100)
                 color: "#F2F2F2"; font.pixelSize: 20; wrapMode: TextEdit.Wrap
                 selectByMouse: true
-                onActiveFocusChanged: if (activeFocus && root.readerEditing) overlayKeyboard.showKeyboard()
+                onActiveFocusChanged: if (activeFocus && root.readerEditing) root.showKeyboard()
             }
-            MouseArea { visible: root.readerEditing; anchors.fill: editorArea; onClicked: { editorArea.forceActiveFocus(); overlayKeyboard.showKeyboard() } }
+            MouseArea { visible: root.readerEditing; anchors.fill: editorArea; onClicked: { editorArea.forceActiveFocus(); root.showKeyboard() } }
         }
         ZybText { visible: root.readerStatus.length > 0; text: root.readerStatus; color: "#31C7A5"; font.pixelSize: 15; anchors.horizontalCenter: parent.horizontalCenter; anchors.bottom: parent.bottom; anchors.bottomMargin: 16 }
     }
@@ -958,7 +986,7 @@ property bool aiHistoryVisible: false
                 anchors.fill: aiInputField
                 onClicked: {
                     aiInputField.forceActiveFocus()
-                    overlayKeyboard.showKeyboard()
+                    root.showKeyboard()
                 }
             }
             ZybText { visible: aiInputField.text.length === 0; text: qsTr("输入问题…"); color: "#999999"; font.pixelSize: 15; anchors.left: aiInputField.left; anchors.leftMargin: 10; anchors.verticalCenter: aiInputField.verticalCenter }
@@ -1378,12 +1406,12 @@ property bool aiHistoryVisible: false
         root.readerStatus = qsTr("编辑模式：保存后立即写入文件")
         editorArea.text = root.readerContent
         editorArea.forceActiveFocus()
-        overlayKeyboard.showKeyboard()
+        root.showKeyboard()
     }
     function cancelEdit() {
         root.readerEditing = false
         root.readerStatus = ""
-        overlayKeyboard.hideKeyboard()
+        root.hideKeyboard()
     }
     function saveEdit() {
         var values = textFileService.saveText(root.readerPath, editorArea.text)
@@ -1392,7 +1420,7 @@ property bool aiHistoryVisible: false
             root.readerEditing = false
             root.readerStatus = qsTr("已保存")
             root.showTip(qsTr("已保存"))
-            overlayKeyboard.hideKeyboard()
+            root.hideKeyboard()
         } else {
             root.readerStatus = values && values.error ? values.error : qsTr("保存失败")
             root.showTip(root.readerStatus)
