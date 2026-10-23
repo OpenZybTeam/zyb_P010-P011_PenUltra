@@ -7,6 +7,7 @@ Item {
     anchors.right: parent.right
     anchors.bottom: parent.bottom
     height: column.height
+    visible: Qt.inputMethod.visible
 
     function closeKeyboard() {
         var focused = holder.Window.activeFocusItem
@@ -22,10 +23,8 @@ Item {
         width: holder.width
 
         Rectangle {
-            id: bar
             width: column.width
-            height: Qt.inputMethod.visible ? 34 : 0
-            visible: height > 0
+            height: 34
             color: "#1B1E24"
             border.color: "#2B2F38"
             border.width: 1
