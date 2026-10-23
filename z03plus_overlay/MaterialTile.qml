@@ -5,8 +5,9 @@ Rectangle {
     property string text: ""
     property string subtitle: ""
     property color accent: "#4C8DFF"
+    property bool compact: false
     signal clicked()
-    height: subtitle.length > 0 ? 76 : 70
+    height: compact ? 60 : (subtitle.length > 0 ? 76 : 70)
     radius: 12
     color: mouse.pressed ? "#2A2E38" : "#1B1E24"
     border.width: 1
@@ -27,26 +28,26 @@ Rectangle {
         radius: 2
         color: tile.accent
         anchors.left: parent.left
-        anchors.leftMargin: 12
+        anchors.leftMargin: tile.compact ? 8 : 12
         anchors.top: parent.top
-        anchors.topMargin: 14
+        anchors.topMargin: tile.compact ? 10 : 14
         anchors.bottom: parent.bottom
-        anchors.bottomMargin: 14
+        anchors.bottomMargin: tile.compact ? 10 : 14
         opacity: 0.95
     }
 
     Column {
         anchors.left: parent.left
-        anchors.leftMargin: 26
+        anchors.leftMargin: tile.compact ? 17 : 26
         anchors.right: parent.right
-        anchors.rightMargin: 28
+        anchors.rightMargin: tile.compact ? 16 : 28
         anchors.verticalCenter: parent.verticalCenter
         spacing: 3
         Text {
             width: parent.width
             text: tile.text
             color: "#F2F3F5"
-            font.pixelSize: 17
+            font.pixelSize: tile.compact ? 15 : 17
             font.weight: Font.Medium
             elide: Text.ElideRight
         }
@@ -55,7 +56,7 @@ Rectangle {
             visible: tile.subtitle.length > 0
             text: tile.subtitle
             color: "#8E9099"
-            font.pixelSize: 11
+            font.pixelSize: tile.compact ? 10 : 11
             elide: Text.ElideRight
         }
     }

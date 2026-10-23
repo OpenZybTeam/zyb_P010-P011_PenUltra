@@ -18,8 +18,9 @@ Rectangle {
     property bool baseLandscape: width > height
     property bool effectiveLandscape: baseLandscape ? !portraitMode : portraitMode
     property bool contentRotated: effectiveLandscape !== baseLandscape
-    property int gridColumns: effectiveLandscape ? 3 : 1
+    property int gridColumns: effectiveLandscape ? 3 : 2
     property real tileWidth: (featureList.width - 12 * (gridColumns - 1)) / gridColumns
+    property int sideMargin: contentRotated ? 12 : 20
     property bool sshPageVisible: false
     property bool fileManagerVisible: false
     property bool readerVisible: false
@@ -94,6 +95,7 @@ property bool aiHistoryVisible: false
         anchors.centerIn: parent
         rotation: root.contentRotated ? 90 : 0
         transformOrigin: Item.Center
+        focus: true
 
     // 全局 Qt Virtual Keyboard：所有输入框聚焦即弹出。
     readonly property bool vkReady: vkLoader.status === Loader.Ready && vkLoader.item !== null
@@ -119,9 +121,20 @@ property bool aiHistoryVisible: false
     }
 
     function hideKeyboard() {
-        if (root.vkReady)
+        if (root.vkReady) {
+            if (pageContent)
+                pageContent.forceActiveFocus()
             Qt.inputMethod.hide()
-        else
+        } else {
+            overlayKeyboard.hideKeyboard()
+        }
+    }
+
+    function dismissKeyboard() {
+        if (pageContent)
+            pageContent.forceActiveFocus()
+        Qt.inputMethod.hide()
+        if (!root.vkReady)
             overlayKeyboard.hideKeyboard()
     }
 
@@ -199,17 +212,17 @@ property bool aiHistoryVisible: false
     }
 
     ZybText {
-        text: qsTr("Z03Ultra 扩展 · FM3")
+        text: root.contentRotated ? qsTr("Z03Ultra") : qsTr("Z03Ultra 扩展 · FM3")
         font.styleName: "Bold"
-        font.pixelSize: 21
+        font.pixelSize: root.contentRotated ? 18 : 21
         anchors.horizontalCenter: parent.horizontalCenter
         anchors.verticalCenter: backButton.verticalCenter
     }
 
     Rectangle {
         id: orientButton
-        width: 96
-        height: 38
+        width: root.contentRotated ? 84 : 96
+        height: root.contentRotated ? 34 : 38
         radius: 17
         anchors.top: parent.top
         anchors.topMargin: 10
@@ -236,9 +249,9 @@ property bool aiHistoryVisible: false
         anchors.top: backButton.bottom
         anchors.topMargin: 12
         anchors.left: parent.left
-        anchors.leftMargin: 20
+        anchors.leftMargin: root.sideMargin
         anchors.right: parent.right
-        anchors.rightMargin: 20
+        anchors.rightMargin: root.sideMargin
         anchors.bottom: parent.bottom
         anchors.bottomMargin: 12
         clip: true
@@ -249,7 +262,7 @@ property bool aiHistoryVisible: false
         Column {
             id: featuresColumn
             width: featureList.width
-            spacing: 10
+            spacing: root.contentRotated ? 7 : 10
 
             Text {
                 width: parent.width
@@ -268,6 +281,7 @@ property bool aiHistoryVisible: false
 
                 MaterialTile {
                     width: root.tileWidth
+                    compact: root.contentRotated
                     text: qsTr("浏览器")
                     subtitle: qsTr("内置 WebKit 引擎")
                     accent: "#4C8DFF"
@@ -275,6 +289,7 @@ property bool aiHistoryVisible: false
                 }
                 MaterialTile {
                     width: root.tileWidth
+                    compact: root.contentRotated
                     text: qsTr("手机互传")
                     subtitle: qsTr("同一 Wi-Fi 上传下载")
                     accent: "#2AC7A4"
@@ -282,6 +297,7 @@ property bool aiHistoryVisible: false
                 }
                 MaterialTile {
                     width: root.tileWidth
+                    compact: root.contentRotated
                     text: qsTr("手写便签")
                     subtitle: qsTr("画笔记录，导出 PNG")
                     accent: "#F2B34C"
@@ -289,6 +305,7 @@ property bool aiHistoryVisible: false
                 }
                 MaterialTile {
                     width: root.tileWidth
+                    compact: root.contentRotated
                     text: qsTr("应用启动器")
                     subtitle: qsTr("Nix 与系统应用")
                     accent: "#8E7BFF"
@@ -296,6 +313,7 @@ property bool aiHistoryVisible: false
                 }
                 MaterialTile {
                     width: root.tileWidth
+                    compact: root.contentRotated
                     text: qsTr("文件管理")
                     subtitle: qsTr("浏览、上传与整理")
                     accent: "#2AC7A4"
@@ -303,6 +321,7 @@ property bool aiHistoryVisible: false
                 }
                 MaterialTile {
                     width: root.tileWidth
+                    compact: root.contentRotated
                     text: qsTr("文本阅读")
                     subtitle: qsTr("打开 txt 文档")
                     accent: "#8E9099"
@@ -310,6 +329,7 @@ property bool aiHistoryVisible: false
                 }
                 MaterialTile {
                     width: root.tileWidth
+                    compact: root.contentRotated
                     text: qsTr("AI 对话")
                     subtitle: qsTr("本地模型对话")
                     accent: "#B388FF"
@@ -334,6 +354,7 @@ property bool aiHistoryVisible: false
 
                 MaterialTile {
                     width: root.tileWidth
+                    compact: root.contentRotated
                     text: qsTr("显示与灯光")
                     subtitle: qsTr("亮度、休眠与灯效")
                     accent: "#4DD0E1"
@@ -341,6 +362,7 @@ property bool aiHistoryVisible: false
                 }
                 MaterialTile {
                     width: root.tileWidth
+                    compact: root.contentRotated
                     text: qsTr("存储空间")
                     subtitle: qsTr("磁盘占用与清理")
                     accent: "#4C8DFF"
@@ -348,6 +370,7 @@ property bool aiHistoryVisible: false
                 }
                 MaterialTile {
                     width: root.tileWidth
+                    compact: root.contentRotated
                     text: qsTr("Nix 商店")
                     subtitle: qsTr("搜索与安装软件包")
                     accent: "#2AC7A4"
@@ -355,6 +378,7 @@ property bool aiHistoryVisible: false
                 }
                 MaterialTile {
                     width: root.tileWidth
+                    compact: root.contentRotated
                     text: qsTr("在线音乐")
                     subtitle: qsTr("搜索与播放")
                     accent: "#FF7A85"
@@ -362,6 +386,7 @@ property bool aiHistoryVisible: false
                 }
                 MaterialTile {
                     width: root.tileWidth
+                    compact: root.contentRotated
                     text: qsTr("录音机")
                     subtitle: qsTr("麦克风录音")
                     accent: "#F2B34C"
@@ -369,6 +394,7 @@ property bool aiHistoryVisible: false
                 }
                 MaterialTile {
                     width: root.tileWidth
+                    compact: root.contentRotated
                     text: qsTr("终端")
                     subtitle: qsTr("本地 Shell")
                     accent: "#8E9099"
@@ -376,6 +402,7 @@ property bool aiHistoryVisible: false
                 }
                 MaterialTile {
                     width: root.tileWidth
+                    compact: root.contentRotated
                     text: qsTr("ADB / SSH")
                     subtitle: qsTr("远程连接与密钥")
                     accent: "#FF7597"
@@ -383,6 +410,7 @@ property bool aiHistoryVisible: false
                 }
                 MaterialTile {
                     width: root.tileWidth
+                    compact: root.contentRotated
                     text: qsTr("设备信息")
                     subtitle: qsTr("硬件与系统版本")
                     accent: "#4C8DFF"
@@ -390,6 +418,7 @@ property bool aiHistoryVisible: false
                 }
                 MaterialTile {
                     width: root.tileWidth
+                    compact: root.contentRotated
                     text: qsTr("关于 Z03Ultra")
                     subtitle: qsTr("版本、更新与许可")
                     accent: "#F2B34C"
@@ -1593,5 +1622,22 @@ property bool aiHistoryVisible: false
         }
     }
 
-    Component.onCompleted: root.loadSshStatus()
+    readonly property bool vkReady: pageContent.vkReady
+
+    function showKeyboard() { pageContent.showKeyboard() }
+    function hideKeyboard() { pageContent.hideKeyboard() }
+    function dismissKeyboard() { pageContent.dismissKeyboard() }
+
+    Timer {
+        id: dismissTimer
+        interval: 0
+        repeat: false
+        onTriggered: root.dismissKeyboard()
+    }
+
+    Component.onCompleted: {
+        root.loadSshStatus()
+        dismissTimer.start()
+    }
+    onVisibleChanged: if (visible) dismissTimer.start()
 }
