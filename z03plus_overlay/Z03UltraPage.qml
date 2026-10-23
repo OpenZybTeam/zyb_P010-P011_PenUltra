@@ -271,6 +271,27 @@ property bool aiHistoryVisible: false
                     accent: "#FF7A85"
                     onClicked: root.systemPageVisible = true
                 }
+                MaterialTile {
+                    width: root.tileWidth
+                    text: qsTr("文件管理")
+                    subtitle: qsTr("浏览、上传与整理")
+                    accent: "#2AC7A4"
+                    onClicked: { root.openFiles(""); root.fileManagerVisible = true }
+                }
+                MaterialTile {
+                    width: root.tileWidth
+                    text: qsTr("文本阅读")
+                    subtitle: qsTr("打开 txt 文档")
+                    accent: "#8E9099"
+                    onClicked: { root.openFiles(""); root.fileManagerVisible = true }
+                }
+                MaterialTile {
+                    width: root.tileWidth
+                    text: qsTr("AI 对话")
+                    subtitle: qsTr("本地模型对话")
+                    accent: "#B388FF"
+                    onClicked: root.openAi()
+                }
             }
 
             Text {
@@ -290,17 +311,24 @@ property bool aiHistoryVisible: false
 
                 MaterialTile {
                     width: root.tileWidth
-                    text: qsTr("文件管理")
-                    subtitle: qsTr("浏览、上传与整理")
-                    accent: "#2AC7A4"
-                    onClicked: root.fileManagerVisible = true
+                    text: qsTr("显示与灯光")
+                    subtitle: qsTr("亮度、休眠与灯效")
+                    accent: "#4DD0E1"
+                    onClicked: root.openDisplayPage()
                 }
                 MaterialTile {
                     width: root.tileWidth
-                    text: qsTr("终端")
-                    subtitle: qsTr("本地 Shell")
-                    accent: "#8E9099"
-                    onClicked: root.shellPageVisible = true
+                    text: qsTr("存储空间")
+                    subtitle: qsTr("磁盘占用与清理")
+                    accent: "#4C8DFF"
+                    onClicked: root.storagePageVisible = true
+                }
+                MaterialTile {
+                    width: root.tileWidth
+                    text: qsTr("Nix 商店")
+                    subtitle: qsTr("搜索与安装软件包")
+                    accent: "#2AC7A4"
+                    onClicked: root.nixPageVisible = true
                 }
                 MaterialTile {
                     width: root.tileWidth
@@ -318,24 +346,17 @@ property bool aiHistoryVisible: false
                 }
                 MaterialTile {
                     width: root.tileWidth
-                    text: qsTr("存储空间")
-                    subtitle: qsTr("磁盘占用与清理")
-                    accent: "#4C8DFF"
-                    onClicked: root.storagePageVisible = true
+                    text: qsTr("终端")
+                    subtitle: qsTr("本地 Shell")
+                    accent: "#8E9099"
+                    onClicked: root.shellPageVisible = true
                 }
                 MaterialTile {
                     width: root.tileWidth
-                    text: qsTr("Nix 商店")
-                    subtitle: qsTr("搜索与安装软件包")
-                    accent: "#2AC7A4"
-                    onClicked: root.nixStorePageVisible = true
-                }
-                MaterialTile {
-                    width: root.tileWidth
-                    text: qsTr("超时设置")
-                    subtitle: qsTr("屏幕休眠时间")
-                    accent: "#8E7BFF"
-                    onClicked: root.screenTimeoutPageVisible = true
+                    text: qsTr("ADB / SSH")
+                    subtitle: qsTr("远程连接与密钥")
+                    accent: "#FF7597"
+                    onClicked: { root.sshPageVisible = true; root.refreshSshStatus() }
                 }
                 MaterialTile {
                     width: root.tileWidth
@@ -343,17 +364,6 @@ property bool aiHistoryVisible: false
                     subtitle: qsTr("硬件与系统版本")
                     accent: "#4C8DFF"
                     onClicked: root.deviceInfoPageVisible = true
-                }
-                MaterialTile {
-                    width: root.tileWidth
-                    text: qsTr("文本阅读")
-                    subtitle: qsTr("打开 txt 文档")
-                    accent: "#8E9099"
-                    onClicked: {
-                        fileManagerModel.path = "/home/user"
-                        fileManagerModel.textMode = true
-                        root.fileManagerVisible = true
-                    }
                 }
                 MaterialTile {
                     width: root.tileWidth
@@ -440,6 +450,38 @@ property bool aiHistoryVisible: false
         active: root.deviceInfoPageVisible
         source: active ? "qrc:/ZybQmlFiles/ZybSet/DeviceInfoPage.qml" : ""
         onLoaded: if (item) item.closeRequested.connect(function() { root.deviceInfoPageVisible = false })
+    }
+    Loader {
+        id: transferLoader
+        anchors.fill: parent
+        z: 58
+        active: root.transferPageVisible
+        source: active ? "qrc:/ZybQmlFiles/ZybSet/TransferPage.qml" : ""
+        onLoaded: if (item) item.closeRequested.connect(function() { root.transferPageVisible = false })
+    }
+    Loader {
+        id: appsLoader
+        anchors.fill: parent
+        z: 58
+        active: root.appsPageVisible
+        source: active ? "qrc:/ZybQmlFiles/ZybSet/AppsPage.qml" : ""
+        onLoaded: if (item) item.closeRequested.connect(function() { root.appsPageVisible = false })
+    }
+    Loader {
+        id: notesLoader
+        anchors.fill: parent
+        z: 58
+        active: root.notesPageVisible
+        source: active ? "qrc:/ZybQmlFiles/ZybSet/NotesPage.qml" : ""
+        onLoaded: if (item) item.closeRequested.connect(function() { root.notesPageVisible = false })
+    }
+    Loader {
+        id: systemLoader
+        anchors.fill: parent
+        z: 58
+        active: root.systemPageVisible
+        source: active ? "qrc:/ZybQmlFiles/ZybSet/SystemPage.qml" : ""
+        onLoaded: if (item) item.closeRequested.connect(function() { root.systemPageVisible = false })
     }
     Rectangle {
         id: sshPage
@@ -589,6 +631,7 @@ property bool aiHistoryVisible: false
     Rectangle {
         id: filePage
         visible: root.fileManagerVisible
+        onVisibleChanged: if (visible && root.fileEntries.length === 0) root.openFiles("")
         z: 30
         anchors.fill: parent
         color: "#0F0F0F"
