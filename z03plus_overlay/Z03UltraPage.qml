@@ -103,19 +103,6 @@ property bool aiHistoryVisible: false
     // 全局 Qt Virtual Keyboard：所有输入框聚焦即弹出。
     readonly property bool vkReady: vkLoader.status === Loader.Ready && vkLoader.item !== null
 
-    Loader {
-        id: vkLoader
-        anchors.fill: parent
-        z: 4000
-        source: "qrc:/ZybQmlFiles/ZybSet/VkPanel.qml"
-        active: true
-        asynchronous: false
-        onStatusChanged: {
-            if (status === Loader.Error)
-                console.log("z03ultra: QtVirtualKeyboard unavailable, fallback to builtin keyboard")
-        }
-    }
-
     function showKeyboard() {
         if (root.vkReady)
             Qt.inputMethod.show()
@@ -244,33 +231,6 @@ property bool aiHistoryVisible: false
             id: orientMouse
             anchors.fill: parent
             onClicked: root.portraitMode = !root.portraitMode
-        }
-    }
-
-    Rectangle {
-        id: hideKeyboardButton
-        visible: root.vkReady && Qt.inputMethod.visible
-        width: 96
-        height: 34
-        radius: 17
-        z: 4500
-        anchors.top: orientButton.bottom
-        anchors.topMargin: 8
-        anchors.right: parent.right
-        anchors.rightMargin: 12
-        color: hideKbMouse.pressed ? "#3B3D45" : "#26272C"
-        border.color: "#3C3E46"
-        border.width: 1
-        Text {
-            anchors.centerIn: parent
-            text: qsTr("收起键盘")
-            color: "#EDEDED"
-            font.pixelSize: 14
-        }
-        MouseArea {
-            id: hideKbMouse
-            anchors.fill: parent
-            onClicked: root.hideKeyboard()
         }
     }
 
@@ -1681,6 +1641,19 @@ property bool aiHistoryVisible: false
                     wrapMode: Text.NoWrap
                 }
             }
+        }
+    }
+
+    Loader {
+        id: vkLoader
+        anchors.fill: parent
+        z: 4000
+        source: "qrc:/ZybQmlFiles/ZybSet/VkPanel.qml"
+        active: true
+        asynchronous: false
+        onStatusChanged: {
+            if (status === Loader.Error)
+                console.log("z03ultra: QtVirtualKeyboard unavailable, fallback to builtin keyboard")
         }
     }
 

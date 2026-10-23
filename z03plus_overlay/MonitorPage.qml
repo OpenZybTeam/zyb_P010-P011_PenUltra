@@ -12,7 +12,9 @@ Rectangle {
     property bool floating: false
     signal closeRequested()
 
-    MonitorService { id: monitor; running: true }
+    MonitorService { id: monitor }
+    Component.onCompleted: monitor.running = true
+    Component.onDestruction: monitor.running = false
 
     function barColor(value) {
         return value > 85 ? "#FF6B6B" : (value > 60 ? "#F2B34C" : "#2AC7A4")

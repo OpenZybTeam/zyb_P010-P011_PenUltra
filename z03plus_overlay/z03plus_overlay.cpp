@@ -2729,7 +2729,7 @@ private:
 };
 
 
-#define Z03ULTRA_VERSION "1.5.0"
+#define Z03ULTRA_VERSION "1.5.1"
 #define Z03ULTRA_REPO "OpenZybTeam/zyb_P010-P011_PenUltra"
 #define Z03ULTRA_MIRROR_PREFIX "https://git.yylx.win/"
 
@@ -3712,7 +3712,7 @@ class Z03PlusMonitorService : public QObject
 public:
     explicit Z03PlusMonitorService(QObject *parent = nullptr) : QObject(parent)
     {
-        mTimer.setInterval(1500);
+        mTimer.setInterval(2000);
         connect(&mTimer, &QTimer::timeout, this, &Z03PlusMonitorService::sample);
         readCpu(mPrevTotal, mPrevIdle);
         readMemory();
@@ -3735,7 +3735,7 @@ public:
             readCpu(mPrevTotal, mPrevIdle);
             mPrevProc.clear();
             mTimer.start();
-            sample();
+            QTimer::singleShot(0, this, [this]() { sample(); });
         } else {
             mTimer.stop();
             mProcesses.clear();
@@ -3889,13 +3889,8 @@ private:
                 cpu = 999;
 
             quint64 rssKb = 0;
-            QFile statm(proc.filePath(entry + QStringLiteral("/statm")));
-            if (statm.open(QIODevice::ReadOnly)) {
-                const QStringList fields = z03SplitChar(QString::fromUtf8(statm.readAll()).trimmed(), QChar(' '));
-                if (fields.size() > 1)
-                    rssKb = fields.at(1).toULongLong() * 4;
-                statm.close();
-            }
+            if (rest.size() > 21)
+                rssKb = rest.at(21).toULongLong() * 4;
             QVariantMap item;
             item.insert(QStringLiteral("pid"), pid);
             item.insert(QStringLiteral("name"), name);
