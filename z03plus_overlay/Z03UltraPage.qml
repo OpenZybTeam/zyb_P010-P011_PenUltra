@@ -112,7 +112,9 @@ property bool aiHistoryVisible: false
     }
 
     function showKeyboard() {
-        if (!root.vkReady)
+        if (root.vkReady)
+            Qt.inputMethod.show()
+        else
             overlayKeyboard.showKeyboard()
     }
 
@@ -762,8 +764,8 @@ property bool aiHistoryVisible: false
             }
             BasicButton { text: qsTr("取消"); anchors.left: parent.left; anchors.leftMargin: 20; anchors.bottom: parent.bottom; anchors.bottomMargin: 16; width: 110; height: 48; radius: 7; checkable: false; backgroundTheme: root.cardColor; onClicked: root.renameDialogVisible = false }
             BasicButton { text: qsTr("确定"); anchors.right: parent.right; anchors.rightMargin: 20; anchors.bottom: parent.bottom; anchors.bottomMargin: 16; width: 110; height: 48; radius: 7; checkable: false; backgroundTheme: root.cardColor; onClicked: { if (root.selectedFile && fileService.rename(root.selectedFile.path, root.renameValue)) root.openFiles(root.currentPath); else { root.fileStatus = qsTr("重命名失败"); root.showTip(root.fileStatus) } root.renameDialogVisible = false } }
-            Component.onCompleted: if (root.renameDialogVisible) renameInput.forceActiveFocus()
-            onVisibleChanged: if (visible) renameInput.forceActiveFocus()
+            Component.onCompleted: if (root.renameDialogVisible) { renameInput.forceActiveFocus(); root.showKeyboard() }
+            onVisibleChanged: if (visible) { renameInput.forceActiveFocus(); root.showKeyboard() }
         }
     }
     Rectangle {
@@ -781,7 +783,7 @@ property bool aiHistoryVisible: false
             }
             BasicButton { text: qsTr("取消"); anchors.left: parent.left; anchors.leftMargin: 20; anchors.bottom: parent.bottom; anchors.bottomMargin: 16; width: 110; height: 48; radius: 7; checkable: false; backgroundTheme: root.cardColor; onClicked: root.newFolderDialogVisible = false }
             BasicButton { text: qsTr("确定"); anchors.right: parent.right; anchors.rightMargin: 20; anchors.bottom: parent.bottom; anchors.bottomMargin: 16; width: 110; height: 48; radius: 7; checkable: false; backgroundTheme: root.cardColor; onClicked: { var values = fileService.createDirectory(root.currentPath, root.newFolderValue); if (values.ok) root.openFiles(root.currentPath); else { root.fileStatus = values.error; root.showTip(values.error) } root.newFolderDialogVisible = false } }
-            onVisibleChanged: if (visible) newFolderInput.forceActiveFocus()
+            onVisibleChanged: if (visible) { newFolderInput.forceActiveFocus(); root.showKeyboard() }
         }
     }
     Rectangle {

@@ -190,6 +190,7 @@ Rectangle {
             onClicked: {
                 searchInput.forceActiveFocus()
                 root.activeField = "search"
+                Qt.inputMethod.show()
             }
         }
         ZybText {
@@ -247,6 +248,7 @@ Rectangle {
             onClicked: {
                 attributeInput.forceActiveFocus()
                 root.activeField = "attribute"
+                Qt.inputMethod.show()
             }
         }
         ZybText {

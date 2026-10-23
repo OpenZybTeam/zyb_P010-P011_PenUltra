@@ -18,6 +18,7 @@ Rectangle {
     signal closeRequested()
 
     function showKeyboard() {
+        Qt.inputMethod.show()
     }
 
     function hideKeyboard() {

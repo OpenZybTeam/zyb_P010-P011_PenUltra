@@ -143,6 +143,7 @@ Rectangle {
             onClicked: {
                 commandInput.forceActiveFocus()
                 root.activeField = "command"
+                Qt.inputMethod.show()
             }
         }
         ZybText {
