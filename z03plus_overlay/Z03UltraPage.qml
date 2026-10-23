@@ -35,7 +35,6 @@ Rectangle {
     property bool transferPageVisible: false
     property bool appsPageVisible: false
     property bool notesPageVisible: false
-    property bool systemPageVisible: false
     property bool debugPageVisible: false
     property string sshRunning: "未知"
     property string sshIp: "正在读取…"
@@ -267,13 +266,6 @@ property bool aiHistoryVisible: false
                 }
                 MaterialTile {
                     width: root.tileWidth
-                    text: qsTr("系统控制")
-                    subtitle: qsTr("亮度 音量 电量 性能")
-                    accent: "#FF7A85"
-                    onClicked: root.systemPageVisible = true
-                }
-                MaterialTile {
-                    width: root.tileWidth
                     text: qsTr("文件管理")
                     subtitle: qsTr("浏览、上传与整理")
                     accent: "#2AC7A4"
@@ -475,14 +467,6 @@ property bool aiHistoryVisible: false
         active: root.notesPageVisible
         source: active ? "qrc:/ZybQmlFiles/ZybSet/NotesPage.qml" : ""
         onLoaded: if (item) item.closeRequested.connect(function() { root.notesPageVisible = false })
-    }
-    Loader {
-        id: systemLoader
-        anchors.fill: parent
-        z: 58
-        active: root.systemPageVisible
-        source: active ? "qrc:/ZybQmlFiles/ZybSet/SystemPage.qml" : ""
-        onLoaded: if (item) item.closeRequested.connect(function() { root.systemPageVisible = false })
     }
     Loader {
         id: debugLoader

@@ -15,10 +15,10 @@
     <file alias="DeviceInfoPage.qml">DeviceInfoPage.qml</file>
     <file alias="BrowserPage.qml">BrowserPage.qml</file>
     <file alias="AboutPage.qml">AboutPage.qml</file>
+    <file alias="VkPanel.qml">VkPanel.qml</file>
     <file alias="TransferPage.qml">TransferPage.qml</file>
     <file alias="AppsPage.qml">AppsPage.qml</file>
     <file alias="NotesPage.qml">NotesPage.qml</file>
-    <file alias="SystemPage.qml">SystemPage.qml</file>
     <!-- File manager and text reader are embedded in Z03UltraPage.qml. -->
   </qresource>
 </RCC>

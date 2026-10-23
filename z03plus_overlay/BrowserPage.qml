@@ -15,7 +15,18 @@ Rectangle {
     property bool pageError: false
     property string errorText: ""
     property bool desktopUA: false
+    property bool vkReady: vkLoader.status === Loader.Ready && vkLoader.item !== null
     signal closeRequested()
+
+    function showKeyboard() {
+        if (!root.vkReady)
+            overlayBrowserKeyboard.showKeyboard()
+    }
+
+    function hideKeyboard() {
+        overlayBrowserKeyboard.hideKeyboard()
+        addressInput.focus = false
+    }
 
     function applyUserAgent() {
         var ua = desktopUA
@@ -53,12 +64,11 @@ Rectangle {
         var text = addressInput.text.trim()
         if (text.length === 0) {
             addressInput.forceActiveFocus()
-            overlayBrowserKeyboard.showKeyboard()
+            root.showKeyboard()
             return
         }
         typedUrl = text
-        addressInput.focus = false
-        overlayBrowserKeyboard.hideKeyboard()
+        root.hideKeyboard()
         navigateTo(text)
     }
 
@@ -102,7 +112,7 @@ Rectangle {
         onBackClicked: {
             if (web.loading)
                 web.stop()
-            overlayBrowserKeyboard.hideKeyboard()
+            root.hideKeyboard()
             root.closeRequested()
         }
     }
@@ -199,7 +209,7 @@ Rectangle {
             onClicked: {
                 addressInput.forceActiveFocus()
                 root.activeField = "address"
-                overlayBrowserKeyboard.showKeyboard()
+                root.showKeyboard()
             }
         }
         BasicButton {
@@ -422,6 +432,16 @@ Rectangle {
                 }
             }
         }
+    }
+
+    Loader {
+        id: vkLoader
+        anchors.fill: parent
+        z: 299
+        source: "qrc:/ZybQmlFiles/ZybSet/VkPanel.qml"
+        active: true
+        asynchronous: false
+        onStatusChanged: if (status === Loader.Error) console.log("browser: QtVirtualKeyboard unavailable")
     }
 
     ZybKeyBoard {

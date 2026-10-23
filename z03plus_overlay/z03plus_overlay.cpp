@@ -2729,7 +2729,7 @@ private:
 };
 
 
-#define Z03ULTRA_VERSION "1.3.3"
+#define Z03ULTRA_VERSION "1.4.0"
 #define Z03ULTRA_REPO "OpenZybTeam/zyb_P010-P011_PenUltra"
 #define Z03ULTRA_MIRROR_PREFIX "https://git.yylx.win/"
 
@@ -3592,269 +3592,6 @@ private:
     }
 };
 
-class Z03PlusSystemService : public QObject
-{
-    Q_OBJECT
-    Q_PROPERTY(int brightness READ brightness NOTIFY changed)
-    Q_PROPERTY(int maxBrightness READ maxBrightness NOTIFY changed)
-    Q_PROPERTY(int volume READ volume NOTIFY changed)
-    Q_PROPERTY(int battery READ battery NOTIFY changed)
-    Q_PROPERTY(QString batteryStatus READ batteryStatus NOTIFY changed)
-    Q_PROPERTY(QString batteryDetail READ batteryDetail NOTIFY changed)
-    Q_PROPERTY(QString governor READ governor NOTIFY changed)
-    Q_PROPERTY(QStringList governors READ governors NOTIFY changed)
-    Q_PROPERTY(QString cpuTemp READ cpuTemp NOTIFY changed)
-    Q_PROPERTY(QString memoryText READ memoryText NOTIFY changed)
-    Q_PROPERTY(QString status READ status NOTIFY changed)
-    Q_PROPERTY(bool volumeAvailable READ volumeAvailable NOTIFY changed)
-public:
-    explicit Z03PlusSystemService(QObject *parent = nullptr) : QObject(parent)
-    {
-        logLine(QStringLiteral("system: construct"));
-        QMetaObject::invokeMethod(this, "refresh", Qt::QueuedConnection);
-    }
-
-    int brightness() const { return mBrightness; }
-    int maxBrightness() const { return mMaxBrightness; }
-    int volume() const { return mVolume; }
-    int battery() const { return mBattery; }
-    QString batteryStatus() const { return mBatteryStatus; }
-    QString batteryDetail() const { return mBatteryDetail; }
-    QString governor() const { return mGovernor; }
-    QStringList governors() const { return mGovernors; }
-    QString cpuTemp() const { return mCpuTemp; }
-    QString memoryText() const { return mMemoryText; }
-    QString status() const { return mStatus; }
-    bool volumeAvailable() const { return mVolumeAvailable; }
-
-    Q_INVOKABLE void refresh()
-    {
-        logLine(QStringLiteral("system: refresh begin"));
-        locateBrightness();
-        if (!mBrightnessPath.isEmpty()) {
-            mBrightness = readInt(mBrightnessPath, mBrightness);
-            mMaxBrightness = qMax(1, readInt(mMaxPath, mMaxBrightness));
-        }
-        mVolumeAvailable = false;
-        QProcess mixer;
-        mixer.start(QStringLiteral("/bin/sh"), QStringList() << QStringLiteral("-c")
-                    << QStringLiteral("command -v amixer >/dev/null 2>&1 && amixer sget Master 2>/dev/null | sed -n 's/.*\\[\\([0-9]*\\)%\\].*/\\1/p' | head -n 1"));
-        if (mixer.waitForFinished(800)) {
-            const QString out = QString::fromLatin1(mixer.readAllStandardOutput()).trimmed();
-            if (!out.isEmpty()) {
-                mVolume = out.toInt();
-                mVolumeAvailable = true;
-            }
-        }
-        readBattery();
-        readGovernor();
-        readTemperature();
-        readMemory();
-        emit changed();
-        logLine(QStringLiteral("system: refresh end"));
-    }
-
-    Q_INVOKABLE bool setBrightness(int value)
-    {
-        logLine(QStringLiteral("system: setBrightness %1").arg(value));
-        if (mBrightnessPath.isEmpty())
-            return false;
-        value = qBound(1, value, mMaxBrightness);
-        if (!writeText(mBrightnessPath, QString::number(value))) {
-            mStatus = QStringLiteral("无法写入亮度节点");
-            emit changed();
-            return false;
-        }
-        mBrightness = value;
-        mStatus = QStringLiteral("亮度已调整");
-        emit changed();
-        return true;
-    }
-
-    Q_INVOKABLE bool setVolume(int value)
-    {
-        logLine(QStringLiteral("system: setVolume %1").arg(value));
-        if (!mVolumeAvailable)
-            return false;
-        value = qBound(0, value, 100);
-        QProcess mixer;
-        mixer.start(QStringLiteral("/bin/sh"), QStringList() << QStringLiteral("-c")
-                    << QStringLiteral("amixer sset Master %1% >/dev/null 2>&1").arg(value));
-        if (!mixer.waitForFinished(2000) || mixer.exitCode() != 0)
-            return false;
-        mVolume = value;
-        emit changed();
-        return true;
-    }
-
-    Q_INVOKABLE bool setGovernor(const QString &name)
-    {
-        if (mGovernorPath.isEmpty() || !mGovernors.contains(name))
-            return false;
-        if (!writeText(mGovernorPath, name))
-            return false;
-        mGovernor = name;
-        mStatus = QStringLiteral("性能模式：") + name;
-        emit changed();
-        return true;
-    }
-
-    Q_INVOKABLE bool reboot() { return QProcess::startDetached(QStringLiteral("/sbin/reboot"), QStringList()); }
-    Q_INVOKABLE bool poweroff() { return QProcess::startDetached(QStringLiteral("/sbin/poweroff"), QStringList()); }
-
-signals:
-    void changed();
-
-private:
-    static void logLine(const QString &text)
-    {
-        QDir().mkpath(QStringLiteral("/home/user/z03plus"));
-        QFile file(QStringLiteral("/home/user/z03plus/trace.log"));
-        if (!file.open(QIODevice::WriteOnly | QIODevice::Append))
-            return;
-        file.write(QDateTime::currentDateTime().toString(Qt::ISODate).toUtf8());
-        file.write(" ");
-        file.write(text.toUtf8());
-        file.write("\n");
-    }
-
-    static int readInt(const QString &path, int fallback)
-    {
-        QFile file(path);
-        if (!file.open(QIODevice::ReadOnly))
-            return fallback;
-        const QString text = QString::fromLatin1(file.readAll()).trimmed();
-        file.close();
-        bool ok = false;
-        const int value = text.toInt(&ok);
-        return ok ? value : fallback;
-    }
-
-    static bool writeText(const QString &path, const QString &text)
-    {
-        QFile file(path);
-        if (!file.open(QIODevice::WriteOnly))
-            return false;
-        const bool ok = file.write(text.toLatin1()) > 0;
-        file.close();
-        return ok;
-    }
-
-    void locateBrightness()
-    {
-        if (!mBrightnessPath.isEmpty())
-            return;
-        QDir backlight(QStringLiteral("/sys/class/backlight"));
-        const QStringList devices = backlight.entryList(QDir::Dirs | QDir::NoDotAndDotDot);
-        if (devices.isEmpty())
-            return;
-        const QString base = backlight.filePath(devices.first());
-        mBrightnessPath = base + QStringLiteral("/brightness");
-        mMaxPath = base + QStringLiteral("/max_brightness");
-        mBrightness = readInt(mBrightnessPath, 0);
-        mMaxBrightness = qMax(1, readInt(mMaxPath, 255));
-    }
-
-    void readBattery()
-    {
-        QDir supply(QStringLiteral("/sys/class/power_supply"));
-        const QStringList names = supply.entryList(QDir::Dirs | QDir::NoDotAndDotDot);
-        for (const QString &name : names) {
-            const QString base = supply.filePath(name);
-            QFile type(base + QStringLiteral("/type"));
-            if (!type.open(QIODevice::ReadOnly))
-                continue;
-            const QString kind = QString::fromLatin1(type.readAll()).trimmed();
-            type.close();
-            if (kind != QStringLiteral("Battery"))
-                continue;
-            mBattery = readInt(base + QStringLiteral("/capacity"), mBattery);
-            QFile status(base + QStringLiteral("/status"));
-            if (status.open(QIODevice::ReadOnly)) {
-                mBatteryStatus = QString::fromLatin1(status.readAll()).trimmed();
-                status.close();
-            }
-            const int voltage = readInt(base + QStringLiteral("/voltage_now"), 0) / 1000;
-            const int temp = readInt(base + QStringLiteral("/temp"), 0) / 10;
-            QStringList detail;
-            if (voltage > 0)
-                detail << QStringLiteral("%1 mV").arg(voltage);
-            if (temp > 0)
-                detail << QStringLiteral("%1 ℃").arg(temp);
-            mBatteryDetail = detail.join(QStringLiteral(" · "));
-            return;
-        }
-    }
-
-    void readGovernor()
-    {
-        const QString base = QStringLiteral("/sys/devices/system/cpu/cpu0/cpufreq");
-        mGovernorPath = base + QStringLiteral("/scaling_governor");
-        QFile current(mGovernorPath);
-        if (current.open(QIODevice::ReadOnly)) {
-            mGovernor = QString::fromLatin1(current.readAll()).trimmed();
-            current.close();
-        }
-        QFile list(base + QStringLiteral("/scaling_available_governors"));
-        if (list.open(QIODevice::ReadOnly)) {
-            mGovernors = QString::fromLatin1(list.readAll()).trimmed().split(QChar(' '), QString::SkipEmptyParts);
-            list.close();
-        }
-    }
-
-    void readTemperature()
-    {
-        int best = 0;
-        QDir thermal(QStringLiteral("/sys/class/thermal"));
-        const QStringList zones = thermal.entryList(QStringList() << QStringLiteral("thermal_zone*"), QDir::Dirs);
-        for (const QString &zone : zones) {
-            const int value = readInt(thermal.filePath(zone) + QStringLiteral("/temp"), 0) / 1000;
-            if (value > best && value < 150)
-                best = value;
-        }
-        mCpuTemp = best > 0 ? QStringLiteral("%1 ℃").arg(best) : QStringLiteral("未知");
-    }
-
-    void readMemory()
-    {
-        QFile file(QStringLiteral("/proc/meminfo"));
-        if (!file.open(QIODevice::ReadOnly))
-            return;
-        const QString text = QString::fromLatin1(file.readAll());
-        file.close();
-        qint64 total = 0;
-        qint64 available = 0;
-        const QStringList lines = z03SplitChar(text, QChar('\n'));
-        for (const QString &line : lines) {
-            if (line.startsWith(QStringLiteral("MemTotal:")))
-                total = line.mid(9).trimmed().split(QChar(' ')).value(0).toLongLong();
-            else if (line.startsWith(QStringLiteral("MemAvailable:")))
-                available = line.mid(13).trimmed().split(QChar(' ')).value(0).toLongLong();
-        }
-        if (total > 0) {
-            const double used = (total - available) / 1024.0;
-            const double all = total / 1024.0;
-            mMemoryText = QStringLiteral("%1 / %2 MB").arg(used, 0, 'f', 0).arg(all, 0, 'f', 0);
-        }
-    }
-
-    QString mBrightnessPath;
-    QString mMaxPath;
-    QString mGovernorPath;
-    int mBrightness = 0;
-    int mMaxBrightness = 255;
-    int mVolume = 0;
-    bool mVolumeAvailable = false;
-    int mBattery = 0;
-    QString mBatteryStatus;
-    QString mBatteryDetail;
-    QString mGovernor;
-    QStringList mGovernors;
-    QString mCpuTemp = QStringLiteral("未知");
-    QString mMemoryText = QStringLiteral("未知");
-    QString mStatus;
-};
-
 class Z03PlusNoteService : public QObject
 {
     Q_OBJECT
@@ -3919,6 +3656,24 @@ private:
 };
 
 
+static bool z03VirtualKeyboardModulePresent()
+{
+    return QDir(QStringLiteral("/usr/lib/qt5/qml/QtQuick/VirtualKeyboard")).exists();
+}
+
+static void z03EnableVirtualKeyboard()
+{
+    if (qEnvironmentVariableIsSet("QT_IM_MODULE"))
+        return;
+    if (z03VirtualKeyboardModulePresent())
+        qputenv("QT_IM_MODULE", "qtvirtualkeyboard");
+}
+
+__attribute__((constructor)) static void z03plusEarlyEnvironment()
+{
+    z03EnableVirtualKeyboard();
+}
+
 static void registerZ03PlusQmlTypes()
 {
     qputenv("QML_DISABLE_DISK_CACHE", "1");
@@ -3942,7 +3697,6 @@ static void registerZ03PlusQmlTypes()
     qmlRegisterType<Z03PlusUpdateService>("Z03Ultra", 1, 0, "UpdateService");
     qmlRegisterType<Z03PlusTransferService>("Z03Ultra", 1, 0, "TransferService");
     qmlRegisterType<Z03PlusAppService>("Z03Ultra", 1, 0, "AppService");
-    qmlRegisterType<Z03PlusSystemService>("Z03Ultra", 1, 0, "SystemService");
     qmlRegisterType<Z03PlusNoteService>("Z03Ultra", 1, 0, "NoteService");
 }
 Q_COREAPP_STARTUP_FUNCTION(registerZ03PlusQmlTypes)
