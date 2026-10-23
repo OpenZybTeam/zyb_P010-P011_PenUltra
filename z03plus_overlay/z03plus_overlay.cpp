@@ -2729,7 +2729,7 @@ private:
 };
 
 
-#define Z03ULTRA_VERSION "1.3.2"
+#define Z03ULTRA_VERSION "1.3.3"
 #define Z03ULTRA_REPO "OpenZybTeam/zyb_P010-P011_PenUltra"
 #define Z03ULTRA_MIRROR_PREFIX "https://git.yylx.win/"
 
@@ -3608,7 +3608,11 @@ class Z03PlusSystemService : public QObject
     Q_PROPERTY(QString status READ status NOTIFY changed)
     Q_PROPERTY(bool volumeAvailable READ volumeAvailable NOTIFY changed)
 public:
-    explicit Z03PlusSystemService(QObject *parent = nullptr) : QObject(parent) { refresh(); }
+    explicit Z03PlusSystemService(QObject *parent = nullptr) : QObject(parent)
+    {
+        logLine(QStringLiteral("system: construct"));
+        QMetaObject::invokeMethod(this, "refresh", Qt::QueuedConnection);
+    }
 
     int brightness() const { return mBrightness; }
     int maxBrightness() const { return mMaxBrightness; }
@@ -3625,6 +3629,7 @@ public:
 
     Q_INVOKABLE void refresh()
     {
+        logLine(QStringLiteral("system: refresh begin"));
         locateBrightness();
         if (!mBrightnessPath.isEmpty()) {
             mBrightness = readInt(mBrightnessPath, mBrightness);
@@ -3634,7 +3639,7 @@ public:
         QProcess mixer;
         mixer.start(QStringLiteral("/bin/sh"), QStringList() << QStringLiteral("-c")
                     << QStringLiteral("command -v amixer >/dev/null 2>&1 && amixer sget Master 2>/dev/null | sed -n 's/.*\\[\\([0-9]*\\)%\\].*/\\1/p' | head -n 1"));
-        if (mixer.waitForFinished(1500)) {
+        if (mixer.waitForFinished(800)) {
             const QString out = QString::fromLatin1(mixer.readAllStandardOutput()).trimmed();
             if (!out.isEmpty()) {
                 mVolume = out.toInt();
@@ -3646,10 +3651,12 @@ public:
         readTemperature();
         readMemory();
         emit changed();
+        logLine(QStringLiteral("system: refresh end"));
     }
 
     Q_INVOKABLE bool setBrightness(int value)
     {
+        logLine(QStringLiteral("system: setBrightness %1").arg(value));
         if (mBrightnessPath.isEmpty())
             return false;
         value = qBound(1, value, mMaxBrightness);
@@ -3666,6 +3673,7 @@ public:
 
     Q_INVOKABLE bool setVolume(int value)
     {
+        logLine(QStringLiteral("system: setVolume %1").arg(value));
         if (!mVolumeAvailable)
             return false;
         value = qBound(0, value, 100);
@@ -3698,6 +3706,18 @@ signals:
     void changed();
 
 private:
+    static void logLine(const QString &text)
+    {
+        QDir().mkpath(QStringLiteral("/home/user/z03plus"));
+        QFile file(QStringLiteral("/home/user/z03plus/trace.log"));
+        if (!file.open(QIODevice::WriteOnly | QIODevice::Append))
+            return;
+        file.write(QDateTime::currentDateTime().toString(Qt::ISODate).toUtf8());
+        file.write(" ");
+        file.write(text.toUtf8());
+        file.write("\n");
+    }
+
     static int readInt(const QString &path, int fallback)
     {
         QFile file(path);

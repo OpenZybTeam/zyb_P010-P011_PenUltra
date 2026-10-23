@@ -36,6 +36,7 @@ Rectangle {
     property bool appsPageVisible: false
     property bool notesPageVisible: false
     property bool systemPageVisible: false
+    property bool debugPageVisible: false
     property string sshRunning: "未知"
     property string sshIp: "正在读取…"
     property string sshPort: "22"
@@ -483,6 +484,19 @@ property bool aiHistoryVisible: false
         source: active ? "qrc:/ZybQmlFiles/ZybSet/SystemPage.qml" : ""
         onLoaded: if (item) item.closeRequested.connect(function() { root.systemPageVisible = false })
     }
+    Loader {
+        id: debugLoader
+        anchors.fill: parent
+        z: 59
+        active: root.debugPageVisible
+        source: active ? "qrc:/ZybQmlFiles/ZybSet/SetDebugPage.qml" : ""
+        onLoaded: {
+            if (!item) return
+            item.width = width
+            item.height = height
+            item.backToParent.connect(function() { root.debugPageVisible = false })
+        }
+    }
     Rectangle {
         id: sshPage
         visible: root.sshPageVisible
@@ -552,6 +566,12 @@ property bool aiHistoryVisible: false
                 width: parent.width; color: "#B8B8B8"; font.pixelSize: 18
                 wrapMode: Text.WordWrap
                 text: qsTr("使用 SSH 公钥免密码登录；user 与 root 均可登录。若 root 显示已禁用，请在设备执行 sh /home/user/z03plus/setup_ssh.sh；root 密码登录需先执行 passwd root。")
+            }
+            BasicButton {
+                width: 180; height: 44; radius: 8; checkable: false
+                text: qsTr("系统调试页")
+                backgroundTheme: root.cardColor
+                onClicked: root.debugPageVisible = true
             }
             }
         }
@@ -661,16 +681,24 @@ property bool aiHistoryVisible: false
                 }
             }
             delegate: BasicButton {
+                id: fileRow
                 width: fileList.width; height: 58; radius: 7; checkable: false; backgroundTheme: root.cardColor
-                property bool held: false
+                property bool holdFired: false
                 text: (modelData.isDir ? "[目录] " : (modelData.isLink ? "[链接] " : "[文件] ")) + modelData.name + (modelData.isDir ? "" : "    " + modelData.size)
-                Timer { id: holdTimer; interval: 650; repeat: false; onTriggered: { parent.held = true; root.selectedFile = modelData; root.fileActionsVisible = true } }
-                onPressedChanged: { if (pressed) { held = false; holdTimer.restart() } else holdTimer.stop() }
-                onClicked: {
-                    if (held) return
-                    if (modelData.isDir) root.openFiles(modelData.path)
-                    else if (modelData.text) root.openText(modelData.path)
-                    else root.fileStatus = qsTr("该文件不支持预览，长按可复制、压缩或删除")
+                MouseArea {
+                    anchors.fill: parent
+                    onPressed: fileRow.holdFired = false
+                    onPressAndHold: {
+                        fileRow.holdFired = true
+                        root.selectedFile = modelData
+                        root.fileActionsVisible = true
+                    }
+                    onClicked: {
+                        if (fileRow.holdFired) return
+                        if (modelData.isDir) root.openFiles(modelData.path)
+                        else if (modelData.text) root.openText(modelData.path)
+                        else root.fileStatus = qsTr("该文件不支持预览，长按可复制、压缩或删除")
+                    }
                 }
             }
             footer: ZybText { width: fileList.width; horizontalAlignment: Text.AlignHCenter; color: "#B8B8B8"; text: root.fileEntries.length === 0 ? (root.fileStatus.length > 0 ? root.fileStatus : qsTr("文件夹为空")) : root.fileStatus }
