@@ -19,6 +19,8 @@
     <file alias="TransferPage.qml">TransferPage.qml</file>
     <file alias="AppsPage.qml">AppsPage.qml</file>
     <file alias="NotesPage.qml">NotesPage.qml</file>
+    <file alias="MonitorPage.qml">MonitorPage.qml</file>
+    <file alias="FloatingMonitor.qml">FloatingMonitor.qml</file>
     <!-- File manager and text reader are embedded in Z03UltraPage.qml. -->
   </qresource>
 </RCC>

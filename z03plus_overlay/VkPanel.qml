@@ -1,48 +1,10 @@
 import QtQuick 2.0
 import QtQuick.VirtualKeyboard 2.0
 
-Item {
-    id: holder
+InputPanel {
+    id: panel
     anchors.left: parent.left
     anchors.right: parent.right
-    anchors.bottom: parent.bottom
-    height: column.height
-    visible: Qt.inputMethod.visible
-
-    function closeKeyboard() {
-        var focused = holder.Window.activeFocusItem
-        if (focused && focused !== holder && focused.hasOwnProperty("focus"))
-            focused.focus = false
-        Qt.inputMethod.hide()
-        if (holder.parent)
-            holder.parent.forceActiveFocus()
-    }
-
-    Column {
-        id: column
-        width: holder.width
-
-        Rectangle {
-            width: column.width
-            height: 34
-            color: "#1B1E24"
-            border.color: "#2B2F38"
-            border.width: 1
-            Text {
-                anchors.centerIn: parent
-                text: qsTr("收起键盘")
-                color: "#D8D9DD"
-                font.pixelSize: 13
-            }
-            MouseArea {
-                anchors.fill: parent
-                onClicked: holder.closeKeyboard()
-            }
-        }
-
-        InputPanel {
-            id: panel
-            width: column.width
-        }
-    }
+    y: Qt.inputMethod.visible ? parent.height - height : parent.height
+    Behavior on y { NumberAnimation { duration: 150 } }
 }

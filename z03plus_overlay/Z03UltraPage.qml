@@ -36,6 +36,8 @@ Rectangle {
     property bool transferPageVisible: false
     property bool appsPageVisible: false
     property bool notesPageVisible: false
+    property bool monitorPageVisible: false
+    property bool monitorFloating: false
     property bool debugPageVisible: false
     property string sshRunning: "未知"
     property string sshIp: "正在读取…"
@@ -245,6 +247,33 @@ property bool aiHistoryVisible: false
         }
     }
 
+    Rectangle {
+        id: hideKeyboardButton
+        visible: root.vkReady && Qt.inputMethod.visible
+        width: 96
+        height: 34
+        radius: 17
+        z: 4500
+        anchors.top: orientButton.bottom
+        anchors.topMargin: 8
+        anchors.right: parent.right
+        anchors.rightMargin: 12
+        color: hideKbMouse.pressed ? "#3B3D45" : "#26272C"
+        border.color: "#3C3E46"
+        border.width: 1
+        Text {
+            anchors.centerIn: parent
+            text: qsTr("收起键盘")
+            color: "#EDEDED"
+            font.pixelSize: 14
+        }
+        MouseArea {
+            id: hideKbMouse
+            anchors.fill: parent
+            onClicked: root.hideKeyboard()
+        }
+    }
+
     Flickable {
         id: featureList
         anchors.top: backButton.bottom
@@ -388,6 +417,14 @@ property bool aiHistoryVisible: false
                 MaterialTile {
                     width: root.tileWidth
                     compact: root.contentRotated
+                    text: qsTr("资源监视")
+                    subtitle: qsTr("CPU 与内存实时占用")
+                    accent: "#FFB74D"
+                    onClicked: root.monitorPageVisible = true
+                }
+                MaterialTile {
+                    width: root.tileWidth
+                    compact: root.contentRotated
                     text: qsTr("录音机")
                     subtitle: qsTr("麦克风录音")
                     accent: "#F2B34C"
@@ -484,6 +521,30 @@ property bool aiHistoryVisible: false
             }
         }
     }
+    Loader {
+        id: monitorLoader
+        anchors.fill: parent
+        z: 57
+        active: root.monitorPageVisible
+        source: active ? "qrc:/ZybQmlFiles/ZybSet/MonitorPage.qml" : ""
+        onLoaded: {
+            if (!item) return
+            item.floating = root.monitorFloating
+            item.closeRequested.connect(function() { root.monitorPageVisible = false })
+            item.floatingChanged.connect(function() { root.monitorFloating = item.floating })
+        }
+    }
+
+    FloatingMonitor {
+        id: floatingMonitor
+        width: 182
+        height: 82
+        visible: root.monitorFloating && !root.monitorPageVisible
+        z: 3800
+        onClosed: root.monitorFloating = false
+        onOpenRequested: root.monitorPageVisible = true
+    }
+
     Loader {
         id: aboutLoader
         anchors.fill: parent

@@ -2729,7 +2729,7 @@ private:
 };
 
 
-#define Z03ULTRA_VERSION "1.4.2"
+#define Z03ULTRA_VERSION "1.5.0"
 #define Z03ULTRA_REPO "OpenZybTeam/zyb_P010-P011_PenUltra"
 #define Z03ULTRA_MIRROR_PREFIX "https://git.yylx.win/"
 
@@ -3698,6 +3698,264 @@ private:
 };
 
 
+class Z03PlusMonitorService : public QObject
+{
+    Q_OBJECT
+    Q_PROPERTY(double cpuUsage READ cpuUsage NOTIFY changed)
+    Q_PROPERTY(double memUsage READ memUsage NOTIFY changed)
+    Q_PROPERTY(int memTotalMB READ memTotalMB NOTIFY changed)
+    Q_PROPERTY(int memUsedMB READ memUsedMB NOTIFY changed)
+    Q_PROPERTY(QString loadAverage READ loadAverage NOTIFY changed)
+    Q_PROPERTY(QString uptimeText READ uptimeText NOTIFY changed)
+    Q_PROPERTY(QVariantList processes READ processes NOTIFY changed)
+    Q_PROPERTY(bool running READ running WRITE setRunning NOTIFY runningChanged)
+public:
+    explicit Z03PlusMonitorService(QObject *parent = nullptr) : QObject(parent)
+    {
+        mTimer.setInterval(1500);
+        connect(&mTimer, &QTimer::timeout, this, &Z03PlusMonitorService::sample);
+        readCpu(mPrevTotal, mPrevIdle);
+        readMemory();
+    }
+
+    double cpuUsage() const { return mCpuUsage; }
+    double memUsage() const { return mMemUsage; }
+    int memTotalMB() const { return mMemTotalMB; }
+    int memUsedMB() const { return mMemUsedMB; }
+    QString loadAverage() const { return mLoadAverage; }
+    QString uptimeText() const { return mUptime; }
+    QVariantList processes() const { return mProcesses; }
+    bool running() const { return mTimer.isActive(); }
+
+    void setRunning(bool value)
+    {
+        if (value == mTimer.isActive())
+            return;
+        if (value) {
+            readCpu(mPrevTotal, mPrevIdle);
+            mPrevProc.clear();
+            mTimer.start();
+            sample();
+        } else {
+            mTimer.stop();
+            mProcesses.clear();
+            mPrevProc.clear();
+            emit changed();
+        }
+        emit runningChanged();
+    }
+
+    Q_INVOKABLE void refresh() { sample(); }
+
+signals:
+    void changed();
+    void runningChanged();
+
+private:
+    static bool readCpu(quint64 &total, quint64 &idle)
+    {
+        QFile file(QStringLiteral("/proc/stat"));
+        if (!file.open(QIODevice::ReadOnly))
+            return false;
+        const QByteArray line = file.readLine();
+        file.close();
+        if (!line.startsWith("cpu "))
+            return false;
+        quint64 sum = 0;
+        quint64 idleTicks = 0;
+        int index = 0;
+        for (const QString &part : z03SplitChar(QString::fromUtf8(line).trimmed(), QChar(' '))) {
+            if (part.isEmpty() || part == QStringLiteral("cpu"))
+                continue;
+            bool ok = false;
+            const quint64 value = part.toULongLong(&ok);
+            if (!ok)
+                continue;
+            sum += value;
+            if (index == 3 || index == 4)
+                idleTicks += value;
+            ++index;
+        }
+        if (sum == 0)
+            return false;
+        total = sum;
+        idle = idleTicks;
+        return true;
+    }
+
+    void readMemory()
+    {
+        QFile file(QStringLiteral("/proc/meminfo"));
+        if (!file.open(QIODevice::ReadOnly))
+            return;
+        const QByteArray all = file.readAll();
+        file.close();
+        quint64 total = 0;
+        quint64 freeKb = 0;
+        quint64 buffers = 0;
+        quint64 cached = 0;
+        quint64 available = 0;
+        for (const QByteArray &raw : all.split('\n')) {
+            const QByteArray line = raw.trimmed();
+            if (line.startsWith("MemTotal:"))
+                total = line.mid(9).trimmed().split(' ').value(0).toULongLong();
+            else if (line.startsWith("MemAvailable:"))
+                available = line.mid(13).trimmed().split(' ').value(0).toULongLong();
+            else if (line.startsWith("MemFree:"))
+                freeKb = line.mid(8).trimmed().split(' ').value(0).toULongLong();
+            else if (line.startsWith("Buffers:"))
+                buffers = line.mid(8).trimmed().split(' ').value(0).toULongLong();
+            else if (line.startsWith("Cached:"))
+                cached = line.mid(7).trimmed().split(' ').value(0).toULongLong();
+        }
+        if (total == 0)
+            return;
+        if (available == 0)
+            available = freeKb + buffers + cached;
+        if (available > total)
+            available = total;
+        mMemTotalMB = int(total / 1024);
+        mMemUsedMB = int((total - available) / 1024);
+        mMemUsage = double(total - available) * 100.0 / double(total);
+    }
+
+    void readLoad()
+    {
+        QFile file(QStringLiteral("/proc/loadavg"));
+        if (!file.open(QIODevice::ReadOnly))
+            return;
+        const QStringList parts = z03SplitChar(QString::fromUtf8(file.readAll()).trimmed(), QChar(' '));
+        file.close();
+        if (parts.size() >= 3)
+            mLoadAverage = parts.at(0) + QStringLiteral("  ") + parts.at(1) + QStringLiteral("  ") + parts.at(2);
+    }
+
+    void readUptime()
+    {
+        QFile file(QStringLiteral("/proc/uptime"));
+        if (!file.open(QIODevice::ReadOnly))
+            return;
+        const double seconds = QString::fromUtf8(file.readAll()).trimmed().split(' ').value(0).toDouble();
+        file.close();
+        const int total = int(seconds);
+        const int days = total / 86400;
+        const int hours = (total % 86400) / 3600;
+        const int minutes = (total % 3600) / 60;
+        if (days > 0)
+            mUptime = QStringLiteral("%1 天 %2 小时").arg(days).arg(hours);
+        else if (hours > 0)
+            mUptime = QStringLiteral("%1 小时 %2 分").arg(hours).arg(minutes);
+        else
+            mUptime = QStringLiteral("%1 分钟").arg(minutes);
+    }
+
+    void readProcesses(quint64 totalDelta)
+    {
+        QVariantList list;
+        QHash<int, quint64> current;
+        QDir proc(QStringLiteral("/proc"));
+        const QStringList entries = proc.entryList(QDir::Dirs | QDir::NoDotAndDotDot);
+        for (const QString &entry : entries) {
+            bool ok = false;
+            const int pid = entry.toInt(&ok);
+            if (!ok)
+                continue;
+            QFile stat(proc.filePath(entry + QStringLiteral("/stat")));
+            if (!stat.open(QIODevice::ReadOnly))
+                continue;
+            const QByteArray data = stat.readAll();
+            stat.close();
+            const int close = data.lastIndexOf(')');
+            if (close < 0)
+                continue;
+            const int open = data.indexOf('(');
+            if (open < 0 || open >= close)
+                continue;
+            const QString name = QString::fromUtf8(data.mid(open + 1, close - open - 1));
+            const QStringList rest = z03SplitChar(QString::fromUtf8(data.mid(close + 2)).trimmed(), QChar(' '));
+            if (rest.size() < 13)
+                continue;
+            const quint64 utime = rest.at(11).toULongLong();
+            const quint64 stime = rest.at(12).toULongLong();
+            const quint64 ticks = utime + stime;
+            current.insert(pid, ticks);
+            if (totalDelta == 0)
+                continue;
+            const quint64 previous = mPrevProc.value(pid, 0);
+            double cpu = previous > 0 ? double(ticks - previous) * 100.0 / double(totalDelta) : 0.0;
+            if (cpu < 0)
+                cpu = 0;
+            if (cpu > 999)
+                cpu = 999;
+
+            quint64 rssKb = 0;
+            QFile statm(proc.filePath(entry + QStringLiteral("/statm")));
+            if (statm.open(QIODevice::ReadOnly)) {
+                const QStringList fields = z03SplitChar(QString::fromUtf8(statm.readAll()).trimmed(), QChar(' '));
+                if (fields.size() > 1)
+                    rssKb = fields.at(1).toULongLong() * 4;
+                statm.close();
+            }
+            QVariantMap item;
+            item.insert(QStringLiteral("pid"), pid);
+            item.insert(QStringLiteral("name"), name);
+            item.insert(QStringLiteral("cpu"), cpu);
+            item.insert(QStringLiteral("mem"), int(rssKb / 1024));
+            item.insert(QStringLiteral("memPercent"),
+                        mMemTotalMB > 0 ? double(rssKb / 1024) * 100.0 / double(mMemTotalMB) : 0.0);
+            list.append(item);
+        }
+        mPrevProc = current;
+        std::sort(list.begin(), list.end(), [](const QVariant &a, const QVariant &b) {
+            const double left = a.toMap().value(QStringLiteral("cpu")).toDouble();
+            const double right = b.toMap().value(QStringLiteral("cpu")).toDouble();
+            if (left != right)
+                return left > right;
+            return a.toMap().value(QStringLiteral("mem")).toInt() > b.toMap().value(QStringLiteral("mem")).toInt();
+        });
+        if (list.size() > 24)
+            list = list.mid(0, 24);
+        mProcesses = list;
+    }
+
+    void sample()
+    {
+        quint64 total = 0;
+        quint64 idle = 0;
+        if (!readCpu(total, idle))
+            return;
+        const quint64 totalDelta = total > mPrevTotal ? total - mPrevTotal : 0;
+        const quint64 idleDelta = idle > mPrevIdle ? idle - mPrevIdle : 0;
+        if (totalDelta > 0) {
+            double usage = double(totalDelta - idleDelta) * 100.0 / double(totalDelta);
+            if (usage < 0)
+                usage = 0;
+            if (usage > 100)
+                usage = 100;
+            mCpuUsage = usage;
+        }
+        mPrevTotal = total;
+        mPrevIdle = idle;
+        readMemory();
+        readLoad();
+        readUptime();
+        readProcesses(totalDelta);
+        emit changed();
+    }
+
+    QTimer mTimer;
+    double mCpuUsage = 0;
+    double mMemUsage = 0;
+    int mMemTotalMB = 0;
+    int mMemUsedMB = 0;
+    QString mLoadAverage;
+    QString mUptime;
+    QVariantList mProcesses;
+    quint64 mPrevTotal = 0;
+    quint64 mPrevIdle = 0;
+    QHash<int, quint64> mPrevProc;
+};
+
 static bool z03VirtualKeyboardModulePresent()
 {
     return QDir(QStringLiteral("/usr/lib/qt5/qml/QtQuick/VirtualKeyboard")).exists();
@@ -3740,6 +3998,7 @@ static void registerZ03PlusQmlTypes()
     qmlRegisterType<Z03PlusTransferService>("Z03Ultra", 1, 0, "TransferService");
     qmlRegisterType<Z03PlusAppService>("Z03Ultra", 1, 0, "AppService");
     qmlRegisterType<Z03PlusNoteService>("Z03Ultra", 1, 0, "NoteService");
+    qmlRegisterType<Z03PlusMonitorService>("Z03Ultra", 1, 0, "MonitorService");
 }
 Q_COREAPP_STARTUP_FUNCTION(registerZ03PlusQmlTypes)
 
