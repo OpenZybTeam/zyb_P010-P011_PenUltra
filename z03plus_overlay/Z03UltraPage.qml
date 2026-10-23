@@ -1624,6 +1624,28 @@ property bool aiHistoryVisible: false
 
     readonly property bool vkReady: pageContent.vkReady
 
+    function isInside(item, ancestor) {
+        var node = item
+        while (node) {
+            if (node === ancestor)
+                return true
+            node = node.parent
+        }
+        return false
+    }
+
+    // 输入法只服务于本页内的输入框，外部残留焦点引起的自动弹出会被收回。
+    Timer {
+        interval: 500
+        repeat: true
+        running: root.vkReady
+        onTriggered: {
+            var focused = root.Window.activeFocusItem
+            if (focused && !root.isInside(focused, pageContent))
+                root.dismissKeyboard()
+        }
+    }
+
     function showKeyboard() { pageContent.showKeyboard() }
     function hideKeyboard() { pageContent.hideKeyboard() }
     function dismissKeyboard() { pageContent.dismissKeyboard() }
