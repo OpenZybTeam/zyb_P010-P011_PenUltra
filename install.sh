@@ -155,28 +155,48 @@ else
 fi
 log "下载源: $(url "$BASE")"
 
-log "下载资产: $PACKAGE"
-fetch_asset SHA256SUMS "$(url "$BASE/SHA256SUMS")" "$TMP/SHA256SUMS" "$BASE/SHA256SUMS" || die "下载 SHA256SUMS 失败"
-fetch_asset "$PACKAGE" "$(url "$BASE/$PACKAGE")" "$TMP/$PACKAGE" "$BASE/$PACKAGE" || die "下载 $PACKAGE 失败"
+can_unzip() {
+    command -v unzip >/dev/null 2>&1 && return 0
+    command -v busybox >/dev/null 2>&1 && busybox --list 2>/dev/null | grep -qx unzip
+}
 
-verify_asset "$PACKAGE" && log "已校验 $PACKAGE"
-if [ "$?" != 0 ]; then
-    verify_asset "$PACKAGE"
-    [ "$?" = 2 ] && die "SHA256SUMS 中没有 $PACKAGE"
-    log "$PACKAGE 校验失败，重新下载"
-    fetch_fresh "$PACKAGE" "$(url "$BASE/$PACKAGE")" "$TMP/$PACKAGE" "$BASE/$PACKAGE" || die "下载 $PACKAGE 失败"
-    verify_asset "$PACKAGE" || die "$PACKAGE 校验失败"
+fetch_asset SHA256SUMS "$(url "$BASE/SHA256SUMS")" "$TMP/SHA256SUMS" "$BASE/SHA256SUMS" || die "下载 SHA256SUMS 失败"
+
+if can_unzip; then
+    log "下载资产: $PACKAGE"
+    fetch_asset "$PACKAGE" "$(url "$BASE/$PACKAGE")" "$TMP/$PACKAGE" "$BASE/$PACKAGE" || die "下载 $PACKAGE 失败"
+    verify_asset "$PACKAGE" || {
+        verify_asset "$PACKAGE"
+        [ "$?" = 2 ] && die "SHA256SUMS 中没有 $PACKAGE"
+        log "$PACKAGE 校验失败，重新下载"
+        fetch_fresh "$PACKAGE" "$(url "$BASE/$PACKAGE")" "$TMP/$PACKAGE" "$BASE/$PACKAGE" || die "下载 $PACKAGE 失败"
+        verify_asset "$PACKAGE" || die "$PACKAGE 校验失败"
+    }
     log "已校验 $PACKAGE"
+    SRC="$TMP/pkg"
+    mkdir -p "$SRC" || die "无法创建解压目录"
+    unzip_cmd "$TMP/$PACKAGE" "$SRC" || die "解压 $PACKAGE 失败"
+else
+    log "设备没有 unzip，改用单文件下载"
+    for f in $FILES; do
+        fetch_asset "$f" "$(url "$BASE/$f")" "$TMP/$f" "$BASE/$f" || die "下载 $f 失败"
+        verify_asset "$f" || {
+            verify_asset "$f"
+            [ "$?" = 2 ] && die "SHA256SUMS 中没有 $f"
+            log "$f 校验失败，重新下载"
+            fetch_fresh "$f" "$(url "$BASE/$f")" "$TMP/$f" || die "下载 $f 失败"
+            verify_asset "$f" || die "$f 校验失败"
+        }
+        log "已校验 $f"
+    done
+    SRC="$TMP"
 fi
 
-PKG="$TMP/pkg"
-mkdir -p "$PKG" || die "无法创建解压目录"
-unzip_cmd "$TMP/$PACKAGE" "$PKG" || die "解压失败，请确认设备具备 unzip"
 for f in $FILES; do
-    [ -f "$PKG/$f" ] || die "$PACKAGE 中缺少 $f"
+    [ -f "$SRC/$f" ] || die "缺少 $f"
 done
 
-grep -q 'libZ03Plus.so' "$PKG/Z03Plus" || die "Z03Plus 未包含 DT_NEEDED 依赖"
+grep -q 'libZ03Plus.so' "$SRC/Z03Plus" || die "Z03Plus 未包含 DT_NEEDED 依赖"
 
 mkdir -p "$DEST/backup"
 for f in $FILES; do
@@ -184,7 +204,7 @@ for f in $FILES; do
 done
 
 for f in $FILES; do
-    cp -f "$PKG/$f" "$DEST/$f" || die "写入 $DEST/$f 失败"
+    cp -f "$SRC/$f" "$DEST/$f" || die "写入 $DEST/$f 失败"
 done
 chmod 755 "$DEST/libZ03Plus.so" "$DEST/Z03Plus" "$DEST/setup_ssh.sh" "$DEST/update_ssh_status.sh"
 chmod 644 "$DEST/z03plus.rcc"

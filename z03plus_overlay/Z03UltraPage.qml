@@ -87,6 +87,7 @@ property bool aiHistoryVisible: false
     FileService { id: fileService }
     TextFileService { id: textFileService }
     VoiceService { id: voiceService }
+    UpdateService { id: updater }
 
     Item {
         id: pageContent
@@ -212,7 +213,7 @@ property bool aiHistoryVisible: false
     }
 
     ZybText {
-        text: root.contentRotated ? qsTr("Z03Ultra") : qsTr("Z03Ultra 扩展 · FM3")
+        text: qsTr("Z03Ultra v") + updater.currentVersion
         font.styleName: "Bold"
         font.pixelSize: root.contentRotated ? 18 : 21
         anchors.horizontalCenter: parent.horizontalCenter
