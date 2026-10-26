@@ -35,11 +35,7 @@ curl -fsSL https://github.com/OpenZybTeam/zyb_P010-P011_PenUltra/releases/latest
 
 - 下载源也可用环境变量指定：`Z03ULTRA_MIRROR=1` 等同于 `--mirror`
 - 无法访问 GitHub 时，可指定下载目录：`curl -fsSL <install.sh 地址> | Z03ULTRA_BASE=<release 下载目录> sh`
-- 存储桶镜像（Cloudflare R2，`r2.cfknb.vip`）保存了大体积资产和整套发布文件，可直接从桶内安装：
 
-  ```sh
-  curl -fsSL https://r2.cfknb.vip/z03plus/releases/v1.8.11/install.sh | Z03ULTRA_BASE=https://r2.cfknb.vip/z03plus/releases/v1.8.11 sh
-  ```
 - 指定其他仓库：`curl -fsSL <install.sh 地址> | Z03ULTRA_REPO=<owner/repo> sh`
 - 回退见下文“回退”一节。
 

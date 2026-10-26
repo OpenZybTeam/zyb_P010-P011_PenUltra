@@ -21,7 +21,7 @@ Z03Ultra 基于 Z03Plus 扩展项目，本文对应 Z03 / P010 / P011 词典笔�
 | `Z03CefLaunch` | CEF 模式启动包装脚本，设置 `LD_BIND_NOW=1` | 275 B |
 | `z03cef_host` | CEF 子进程宿主（zygote/renderer/gpu/storage/network） | 450776 B |
 | `libZ03Cef.so` | QCefView 插件，OSR 渲染接入 QML | 1270092 B |
-| `cef/` | libcef 运行库、资源包与 locale，约 76 MB，放存储桶 | 76267336 B（打包） |
+| `cef/` | libcef 运行库、资源包与 locale，约 76 MB，单独放存储桶 | 76241420 B（打包） |
 | `install.sh` | 一键安装/更新脚本，读取最新 Release 并校验 | 11 KB |
 
 参考 SHA-256：
