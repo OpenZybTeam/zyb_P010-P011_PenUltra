@@ -1,6 +1,6 @@
 import QtQuick 2.0
 import QtQuick.Controls 2.3
-import QtWebEngine 1.4
+import Z03Ultra 1.0
 import "../ZybControls/"
 import "../ZybVirturlKeyBoard"
 import "../Style"
@@ -16,7 +16,48 @@ Rectangle {
     property string errorText: ""
     property bool desktopUA: false
     readonly property bool portrait: width < height
+    property string engine: "qtwebengine"
+    property var view: null
+    property bool engineError: false
+    property string engineErrorText: ""
+    property bool engineReady: false
+    property string pendingEngineUrl: ""
     signal closeRequested()
+
+    BrowserService { id: browserSettings }
+
+    Component.onCompleted: {
+        root.engine = browserSettings.engine()
+        if (root.engine === "cef" && !browserSettings.ensureCefPlugin())
+            root.engineErrorText = browserSettings.cefPluginError()
+        root.engineReady = true
+    }
+
+    function currentUrl() { return (root.view && root.view.url) ? String(root.view.url) : "" }
+    function pageTitle() { return (root.view && root.view.title) ? String(root.view.title) : "" }
+    function isLoading() { return root.view ? !!root.view.loading : false }
+    function loadPercent() { return root.view ? Number(root.view.loadProgress || 0) : 0 }
+    function reloadPage() { if (root.view && root.view.reload) root.view.reload() }
+    function stopLoading() { if (root.view && root.view.stop) root.view.stop() }
+    function commandLoadHtml(html, base) {
+        if (root.view && root.view.loadHtmlPage) root.view.loadHtmlPage(html, base)
+    }
+    function syncAddress() {
+        var u = root.currentUrl()
+        if (u.length > 0 && u !== "about:blank")
+            addressInput.text = u
+    }
+    function setEngine(name) {
+        if (root.engine === name) return
+        var keep = root.currentUrl()
+        root.pendingEngineUrl = (keep.length > 0 && keep !== "about:blank") ? keep : ""
+        root.view = null
+        root.engineError = false
+        root.pageError = false
+        root.engine = name
+        addressInput.text = ""
+        if (browserSettings) browserSettings.setEngine(name)
+    }
 
     function showKeyboard() {
         Qt.inputMethod.show()
@@ -31,12 +72,8 @@ Rectangle {
         var ua = desktopUA
             ? "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/61.0.3163.140 Safari/537.36"
             : "Mozilla/5.0 (Linux; Android 9; Z03Ultra) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/61.0.3163.140 Mobile Safari/537.36"
-        try {
-            if (web.profile)
-                web.profile.httpUserAgent = ua
-        } catch (e) {
-            console.log("browser: cannot set user agent", e)
-        }
+        if (root.view && root.view.setUserAgent)
+            root.view.setUserAgent(ua)
     }
 
     function navigateTo(text) {
@@ -52,10 +89,10 @@ Rectangle {
                 target = "https://" + target
         }
         root.pageError = false
-        if (String(web.url) === target) {
-            web.reload()
-        } else {
-            web.url = target
+        if (root.currentUrl() === target) {
+            root.reloadPage()
+        } else if (root.view && root.view.navigate) {
+            root.view.navigate(target)
         }
     }
 
@@ -82,7 +119,7 @@ Rectangle {
     function home() {
         root.pageError = false
         addressInput.text = ""
-        web.loadHtml(
+        root.commandLoadHtml(
             "<!doctype html><html><head><meta name='viewport' content='width=device-width,initial-scale=1'>"
             + "<style>body{font-family:sans-serif;background:#fff;color:#111;padding:22px}"
             + "h1{font-size:22px;margin:0 0 6px}p{color:#666;font-size:13px;line-height:1.5}"
@@ -109,15 +146,15 @@ Rectangle {
         anchors.left: parent.left
         anchors.leftMargin: 10
         onBackClicked: {
-            if (web.loading)
-                web.stop()
+            if (root.isLoading())
+                root.stopLoading()
             root.hideKeyboard()
             root.closeRequested()
         }
     }
     ZybText {
         id: titleLabel
-        text: web.title.length > 0 ? web.title : qsTr("网页浏览")
+        text: root.pageTitle().length > 0 ? root.pageTitle() : qsTr("网页浏览")
         font.styleName: "Bold"
         font.pixelSize: 14
         elide: Text.ElideRight
@@ -126,10 +163,10 @@ Rectangle {
         anchors.verticalCenter: backButton.verticalCenter
     }
     ZybText {
-        text: web.loading ? (web.loadProgress + "%")
-                           : (root.pageError ? qsTr("加载失败")
-                                             : (root.statusText.length > 0 ? root.statusText : ""))
-        color: web.loading ? "#E0A24A" : (root.pageError ? "#E05A5A" : "#8E9099")
+        text: root.isLoading() ? (root.loadPercent() + "%")
+                               : (root.pageError ? qsTr("加载失败")
+                                                 : (root.statusText.length > 0 ? root.statusText : ""))
+        color: root.isLoading() ? "#E0A24A" : (root.pageError ? "#E05A5A" : "#8E9099")
         font.pixelSize: 12
         elide: Text.ElideRight
         width: root.portrait ? 70 : 220
@@ -159,12 +196,12 @@ Rectangle {
             height: 32
             radius: 6
             checkable: false
-            enabled: web.canGoBack
+            enabled: root.view ? !!root.view.canGoBack : false
             backgroundTheme: Qt.rgba(0.25, 0.26, 0.29, 0.9)
             anchors.left: parent.left
             anchors.leftMargin: 5
             anchors.verticalCenter: parent.verticalCenter
-            onClicked: web.goBack()
+            onClicked: { if (root.view && root.view.goBack) root.view.goBack() }
         }
 
         BasicButton {
@@ -175,12 +212,12 @@ Rectangle {
             height: 32
             radius: 6
             checkable: false
-            enabled: web.canGoForward
+            enabled: root.view ? !!root.view.canGoForward : false
             backgroundTheme: Qt.rgba(0.25, 0.26, 0.29, 0.9)
             anchors.left: historyBack.right
             anchors.leftMargin: 4
             anchors.verticalCenter: parent.verticalCenter
-            onClicked: web.goForward()
+            onClicked: { if (root.view && root.view.goForward) root.view.goForward() }
         }
 
         TextInput {
@@ -215,19 +252,19 @@ Rectangle {
         }
         BasicButton {
             id: goButton
-            text: web.loading ? qsTr("停止") : qsTr("打开")
+            text: root.isLoading() ? qsTr("停止") : qsTr("打开")
             width: root.portrait ? 52 : 66
             height: 32
             radius: 6
             checkable: false
-            backgroundTheme: web.loading ? Qt.rgba(0.7, 0.18, 0.18, 0.8)
+            backgroundTheme: root.isLoading() ? Qt.rgba(0.7, 0.18, 0.18, 0.8)
                                          : Qt.rgba(0.19, 0.62, 0.55, 0.8)
             anchors.right: root.portrait ? parent.right : refreshButton.left
             anchors.rightMargin: root.portrait ? 5 : 6
             anchors.verticalCenter: parent.verticalCenter
             onClicked: {
-                if (web.loading)
-                    web.stop()
+                if (root.isLoading())
+                    root.stopLoading()
                 else
                     root.go()
             }
@@ -248,7 +285,7 @@ Rectangle {
                 if (root.pageError)
                     root.navigateTo(addressInput.text)
                 else
-                    web.reload()
+                    root.reloadPage()
             }
         }
     }
@@ -325,8 +362,8 @@ Rectangle {
                         onClicked: {
                             root.desktopUA = !root.desktopUA
                             root.applyUserAgent()
-                            if (String(web.url).length > 0 && String(web.url) !== "about:blank")
-                                web.reload()
+                            if (root.currentUrl().length > 0 && root.currentUrl() !== "about:blank")
+                                root.reloadPage()
                         }
                     }
                 }
@@ -348,52 +385,103 @@ Rectangle {
         color: "#FFFFFF"
         clip: true
 
-        WebEngineView {
-            id: web
+        Loader {
+            id: engineLoader
             anchors.fill: parent
             anchors.margins: 1
-            backgroundColor: "#FFFFFF"
-            zoomFactor: 1.0
-
-            onLoadingChanged: {
-                if (loadRequest.status === WebEngineView.LoadFailedStatus) {
-                    root.pageError = true
-                    root.errorText = loadRequest.errorString
-                } else if (loadRequest.status === WebEngineView.LoadSucceededStatus) {
+            visible: status === Loader.Ready && !root.engineError
+            source: root.engineReady ? (root.engine === "cef" ? "BrowserEngineCef.qml" : "BrowserEngineWeb.qml") : ""
+            onLoaded: {
+                root.view = item
+                if (!item) return
+                item.loadSucceeded.connect(function() {
                     root.pageError = false
-                }
-            }
-            onUrlChanged: {
-                if (String(web.url).length > 0 && String(web.url) !== "about:blank")
-                    addressInput.text = web.url
-            }
-            Component.onCompleted: {
+                    root.syncAddress()
+                })
+                item.loadFailed.connect(function(message) {
+                    root.pageError = true
+                    root.errorText = message
+                })
+                item.urlChanged.connect(function() { root.syncAddress() })
+                item.newWindowRequested.connect(function(target) {
+                    if (String(target).length > 0) root.navigateTo(target)
+                })
                 root.applyUserAgent()
-                try {
-                    web.newViewRequested.connect(function(request) {
-                        if (request && request.requestedUrl)
-                            web.url = request.requestedUrl
-                    })
-                } catch (e) {
-                    console.log("browser: newViewRequested unavailable", e)
+                if (root.pendingEngineUrl.length > 0) {
+                    var target = root.pendingEngineUrl
+                    root.pendingEngineUrl = ""
+                    root.navigateTo(target)
+                } else {
+                    root.home()
                 }
-                root.home()
+            }
+            onStatusChanged: {
+                if (status === Loader.Loading) {
+                    root.view = null
+                } else if (status === Loader.Error) {
+                    root.view = null
+                    root.engineError = true
+                    root.pageError = false
+                    if (root.engineErrorText.length === 0)
+                        root.engineErrorText = browserSettings.cefPluginError()
+                } else if (status === Loader.Ready) {
+                    root.engineError = false
+                }
             }
         }
 
         Rectangle {
-            visible: web.loading
+            id: engineMissingPanel
+            visible: root.engineError
+            anchors.fill: parent
+            color: "#FAFAFA"
+            Column {
+                width: Math.min(parent.width - 40, 420)
+                anchors.centerIn: parent
+                spacing: 12
+                ZybText {
+                    width: parent.width
+                    text: qsTr("CEF 引擎不可用")
+                    color: "#B3261E"
+                    font.pixelSize: 17
+                    font.styleName: "Bold"
+                    horizontalAlignment: Text.AlignHCenter
+                }
+                ZybText {
+                    width: parent.width
+                    text: root.engineErrorText.length > 0
+                          ? root.engineErrorText
+                          : qsTr("未找到 QCefView 组件（libcef.so 与 QML 插件）。请安装 CEF 组件，或切回内置引擎。")
+                    color: "#555555"
+                    font.pixelSize: 12
+                    wrapMode: Text.Wrap
+                    horizontalAlignment: Text.AlignHCenter
+                }
+                BasicButton {
+                    width: 150
+                    height: 34
+                    x: (parent.width - width) / 2
+                    text: qsTr("切回内置引擎")
+                    checkable: false
+                    backgroundTheme: Qt.rgba(0.19, 0.62, 0.55, 0.85)
+                    onClicked: root.setEngine("qtwebengine")
+                }
+            }
+        }
+
+        Rectangle {
+            visible: root.isLoading()
             height: 3
             radius: 2
             color: "#2FA98D"
             y: 1
-            width: Math.max(6, contentCard.width * web.loadProgress / 100)
+            width: Math.max(6, contentCard.width * root.loadPercent() / 100)
             x: 1
         }
 
         Rectangle {
             id: errorPanel
-            visible: root.pageError && !web.loading
+            visible: root.pageError && !root.isLoading()
             anchors.centerIn: parent
             width: Math.min(parent.width - 60, 460)
             height: errorColumn.height + 40

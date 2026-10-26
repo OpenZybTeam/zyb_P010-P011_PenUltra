@@ -17,7 +17,12 @@ Z03Ultra 基于 Z03Plus 扩展项目，本文对应 Z03 / P010 / P011 词典笔�
 | `libZ03PlusExporter.so` | 可选，导出运行时 QRC 资源 | 80212 B |
 | `z03plus.rcc` | 外部 QML 资源包，qres v2 | 210001 B |
 | `Z03Plus` | 原厂 Z03 副本，已加入 `DT_NEEDED` | 原厂大小加约 4 KB |
-| `install.sh` | 一键安装/更新脚本，读取最新 Release 并校验 | 4 KB |
+| `Z03PlusCef` | 已加入 `cef/libcef.so` 依赖的主程序副本 | 原厂大小加约 4 KB |
+| `Z03CefLaunch` | CEF 模式启动包装脚本，设置 `LD_BIND_NOW=1` | 275 B |
+| `z03cef_host` | CEF 子进程宿主（zygote/renderer/gpu/storage/network） | 450776 B |
+| `libZ03Cef.so` | QCefView 插件，OSR 渲染接入 QML | 1270092 B |
+| `cef/` | libcef 运行库、资源包与 locale，约 76 MB，放存储桶 | 76267336 B（打包） |
+| `install.sh` | 一键安装/更新脚本，读取最新 Release 并校验 | 11 KB |
 
 参考 SHA-256：
 
@@ -423,9 +428,19 @@ key=sk-your-key-here
 model=gpt-3.5-turbo
 ```
 
-## 11. 版本号、应用内更新与下载源
+## 11. CEF 内核构建要点
 
-当前版本号定义在 `z03plus_overlay/z03plus_overlay.cpp` 的 `Z03ULTRA_VERSION`，关于页直接读取该常量显示 `v1.5.3`。发版时同步修改该常量并创建同名 tag。
+CEF 内核由三部分组成，产物都不是常规 `build_armhf.sh` 生成的，需要单独维护：
+
+1. `cef/` 运行库：从 CEF 120.2.7（linuxarm minimal）解包，剔除非必需组件后打包为 `cef120-linuxarm-v5.tar.xz`（约 76 MB，`xz -9e` 最高压缩），放在存储桶 `z03plus/cef/` 下，同目录放 `.sha256`。
+2. `z03cef_host`：调用 `CefExecuteProcess`，链接 `libcef_dll_wrapper.a`。它必须用 glibc 2.28 的 `crt1.o`/`libc` 重新链接，否则会带上设备不存在的 `GLIBC_2.34`；链接完成后用 `patchelf --add-needed` 补上 `libZ03GbmShim.so`、`libatk-1.0.so.0`、`libatk-bridge-2.0.so.0`、`libatspi.so.0` 的绝对路径依赖，再用 `LD_BIND_NOW=1` 运行一次确认没有未定义符号。
+3. `libZ03Cef.so`：插件自身，需要用 `patchelf --replace-needed libcef.so /home/user/z03plus/cef/libcef.so` 改成绝对路径依赖。
+
+排查顺序：先跑 `LD_BIND_NOW=1 ./z03cef_host`，有未定义符号会立刻报错；再跑主程序看 `cef/stage.txt` 的阶段记录；`cef/cef.log` 记录 CEF 内部日志；`cef/launch.log` 只保留最近一次运行的输出和退出码。
+
+## 12. 版本号、应用内更新与下载源
+
+当前版本号定义在 `z03plus_overlay/z03plus_overlay.cpp` 的 `Z03ULTRA_VERSION`，关于页直接读取该常量显示 `v1.8.11`。发版时同步修改该常量并创建同名 tag。
 
 关于页的「检测更新」通过 GitHub API 读取 `releases/latest`，比较 `tag_name` 与当前版本。检测与下载都支持两种源：
 

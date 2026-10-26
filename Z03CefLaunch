@@ -1,0 +1,9 @@
+#!/bin/sh
+D=/home/user/z03plus
+[ -x "$D/Z03PlusCef" ] || exit 1
+ln -f "$D/Z03PlusCef" "$D/Z03" 2>/dev/null
+: > "$D/cef/launch.log"
+env LD_BIND_NOW=1 "$D/Z03" "$@" >>"$D/cef/launch.log" 2>&1
+rc=$?
+echo "$(date '+%Y-%m-%dT%H:%M:%S') exit rc=$rc" >>"$D/cef/launch.log"
+exit $rc

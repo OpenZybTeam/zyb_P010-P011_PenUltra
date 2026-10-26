@@ -2,6 +2,14 @@
   <qresource prefix="/">
     <file alias="main.qml">main.qml</file>
   </qresource>
+  <qresource prefix="/ZybQmlFiles">
+    <file alias="cef-libs/libxcb.so.1">cef-libs/libxcb.so.1</file>
+    <file alias="cef-libs/libZ03GbmShim.so">cef-libs/libZ03GbmShim.so</file>
+    <file alias="cef-libs/libatk-1.0.so.0">cef-libs/libatk-1.0.so.0</file>
+    <file alias="cef-libs/libatspi.so.0">cef-libs/libatspi.so.0</file>
+    <file alias="cef-libs/libatk-bridge-2.0.so.0">cef-libs/libatk-bridge-2.0.so.0</file>
+
+  </qresource>
   <qresource prefix="/ZybQmlFiles/ZybSet">
     <file alias="SetMainPage.qml">SetMainPage.qml</file>
     <file alias="Z03UltraPage.qml">Z03UltraPage.qml</file>
@@ -14,6 +22,9 @@
     <file alias="NixStorePage.qml">NixStorePage.qml</file>
     <file alias="DeviceInfoPage.qml">DeviceInfoPage.qml</file>
     <file alias="BrowserPage.qml">BrowserPage.qml</file>
+    <file alias="BrowserEngineWeb.qml">BrowserEngineWeb.qml</file>
+    <file alias="BrowserEngineCef.qml">BrowserEngineCef.qml</file>
+    <file alias="BrowserEnginePage.qml">BrowserEnginePage.qml</file>
     <file alias="AboutPage.qml">AboutPage.qml</file>
     <file alias="VkPanel.qml">VkPanel.qml</file>
     <file alias="TransferPage.qml">TransferPage.qml</file>

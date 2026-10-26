@@ -31,10 +31,15 @@ curl -fsSL https://github.com/OpenZybTeam/zyb_P010-P011_PenUltra/releases/latest
 
 `install.sh` 读取 GitHub 最新 Release，下载 `z03ultra.zip` 并校验 `SHA256SUMS`，把旧文件备份到 `/home/user/z03plus/backup/`，解压安装 `libZ03Plus.so`、`z03plus.rcc`、`Z03Plus` 与 SSH 辅助脚本，写入 bind mount 启动钩子，然后重启主界面并检查注入结果。`update.sh` 在内存中取回最新 `install.sh` 并执行，两个脚本都不在设备上留下 `.sh` 文件。
 
-应用内也能更新：`设置 -> Z03Ultra 扩展 -> 关于` 显示当前版本（v1.5.3），点「检测更新」查询 Release；发现新版本后可在「下载源：直连 / 镜像」之间切换并直接安装；下载时显示进度条与百分比，完成后自动重启界面。
+应用内也能更新：`设置 -> Z03Ultra 扩展 -> 关于` 显示当前版本（v1.8.11），点「检测更新」查询 Release；发现新版本后可在「下载源：直连 / 镜像」之间切换并直接安装；下载时显示进度条与百分比，完成后自动重启界面。
 
 - 下载源也可用环境变量指定：`Z03ULTRA_MIRROR=1` 等同于 `--mirror`
 - 无法访问 GitHub 时，可指定下载目录：`curl -fsSL <install.sh 地址> | Z03ULTRA_BASE=<release 下载目录> sh`
+- 存储桶镜像（Cloudflare R2，`r2.cfknb.vip`）保存了大体积资产和整套发布文件，可直接从桶内安装：
+
+  ```sh
+  curl -fsSL https://r2.cfknb.vip/z03plus/releases/v1.8.11/install.sh | Z03ULTRA_BASE=https://r2.cfknb.vip/z03plus/releases/v1.8.11 sh
+  ```
 - 指定其他仓库：`curl -fsSL <install.sh 地址> | Z03ULTRA_REPO=<owner/repo> sh`
 - 回退见下文“回退”一节。
 
@@ -63,7 +68,7 @@ curl -fsSL https://github.com/OpenZybTeam/zyb_P010-P011_PenUltra/releases/latest
    - 录音：按 `arecord` / `tinycap` / `gst-launch-1.0` 顺序选择后端，保存 16 kHz 单声道 WAV 到 `/home/user/z03plus/recordings`。
    - 终端 Shell：`/bin/sh -c` 执行命令，输出实时回显，支持停止与 60 秒超时。
    - 应用商店：使用 Nix（安装目录 `/home/nix`，启动时自动 bind mount 到 `/nix`；通过清华 TUNA/NJU 镜像下载 Nix 2.9.2 armv7l，复制 89 MB store 后手动执行 `nix-store --init/--load-db` 与 `nix-env -i`，并添加 nixos-22.05 频道；支持 HTTP 与跳过证书校验回退），支持搜索、按属性安装、查看已安装与更新频道。
-   - 网页浏览：基于系统自带 QtWebEngine 5.10（Chromium 61）的完整网页渲染，支持 JavaScript、CSS、图片与视频、点按链接、触摸滚动、前进后退、地址栏与搜索；地址栏右侧可切换移动版/桌面版 User-Agent；设备存在 QtVirtualKeyboard 时自动启用系统虚拟键盘，网页输入框可直接输入；显示加载进度并在失败时提供重试。
+   - 网页浏览：内置 QtWebEngine 5.10（Chromium 61）与可选 CEF 双内核。默认使用 QtWebEngine，支持 JavaScript、CSS、图片与视频、点按链接、触摸滚动、前进后退、地址栏与搜索；地址栏右侧可切换移动版/桌面版 User-Agent；设备存在 QtVirtualKeyboard 时自动启用系统虚拟键盘，网页输入框可直接输入；显示加载进度并在失败时提供重试。「网页内核」页可在两个内核之间切换，启用 CEF 前会检查 `/home/user/z03plus/cef/` 下的运行库是否完整。
    - 手机互传：设备侧启动局域网 HTTP 服务（端口 8899-8910 自动选择），手机浏览器即可上传、下载、删除 `/home/user/z03plus/transfer` 中的文件，页面显示访问地址、文件列表与实时状态。
    - 手写便签：触摸画板支持多色画笔与粗细、橡皮、撤销、清空，按时间保存为 PNG 到 `/home/user/z03plus/notes`，并提供便签画廊浏览与删除。
    - 资源监视：读取 `/proc` 统计 CPU、内存、负载与运行时间，进程按 CPU 排序；可开启悬浮窗，在任意页面拖动查看实时占用。
@@ -71,6 +76,15 @@ curl -fsSL https://github.com/OpenZybTeam/zyb_P010-P011_PenUltra/releases/latest
    - 关于设备：展示设备型号、发行版、内核、ARM 架构、CPU 型号与特性、内存、运行时间、根分区与 Qt 版本。
    - 关于 Z03Ultra：展示 Powered By OpenZybTeam 与 Based On PenPlus 项目地址，并可在内置浏览器打开。
    - “显示与灯光”会打开原厂 `SetLightPage.qml`。
+
+## 网页内核（CEF）
+
+CEF 内核以独立二进制 `Z03PlusCef` 提供：`cef/libcef.so` 作为启动期 `DT_NEEDED`，页面通过 OSR（离屏渲染）交给 QML `QQuickPaintedItem` 绘制，子进程由 `/home/user/z03plus/z03cef_host` 承担。
+
+- 运行库与资源包约 76 MB（xz 最高压缩），放在存储桶：`https://r2.cfknb.vip/z03plus/cef/cef120-linuxarm-v5.tar.xz`（同目录有 `.sha256`），启用 CEF 时下载并解包到 `/home/user/z03plus/cef/`。
+- 启动路径：`install.sh` 写入的钩子在检测到 `Z03PlusCef`、`cef/libcef.so` 与 `.cef-ok` 时，把 `/home/user/z03plus/Z03CefLaunch` bind mount 到 `/usr/bin/Z03`，由包装脚本设置 `LD_BIND_NOW=1` 后再执行主程序。
+- 渲染后端固定 `--ozone-platform=headless`：设备只有 Wayland 合成器且不暴露 `xdg_wm_base`，x11 又没有 `$DISPLAY`，两种平台都会让 `CefInitialize` 失败。可用 `Z03_CEF_OZONE_PLATFORM` 覆盖。
+- 已知问题：默认主页渲染正常；打开必应等复杂页面时页面 UI 显示异常，主进程不再卡死重启。可随时在「网页内核」页切回 QtWebEngine。
 
 ## 设备环境
 
@@ -85,8 +99,14 @@ curl -fsSL https://github.com/OpenZybTeam/zyb_P010-P011_PenUltra/releases/latest
 - `z03plus_overlay/`：实际生效的 overlay。
   - `SetMainPage.qml`：原厂设置主页的覆盖版，添加入口。
   - `Z03UltraPage.qml`：扩展主页。
+  - `BrowserPage.qml`：浏览器外壳，按当前内核装载对应引擎组件。
+  - `BrowserEnginePage.qml`：网页内核切换页，显示 CEF 安装状态并触发安装。
+  - `BrowserEngineWeb.qml`：QtWebEngine 引擎实现。
+  - `BrowserEngineCef.qml`：CEF 引擎实现（`import QCefView 1.0`）。
   - `z03plus.qrc`：QML 的外部资源清单。
-  - `z03plus_overlay.cpp`：注入库，抢先注册外部 QRC。
+  - `z03plus_overlay.cpp`：注入库，抢先注册外部 QRC，并负责 CEF 模式切换、依赖检查与崩溃转储。
+- `Z03CefLaunch`：CEF 模式的启动包装脚本，用 `LD_BIND_NOW=1` 预绑定 libcef 后再执行主程序。
+- `docs/`：构建部署说明、历史 README 与移植记录。
 - `z03plus_exporter/`：资源导出器源码。在 Z03 注册原始 QRC 后遍历 `:/` 并导出运行时资源。
 - `z03plus_tools/`：离线提取 Z03 嵌入 QML 文本块的 Python 工具及设备侧辅助脚本。
 - `z03mods_poc/`：初期 ARMv7 注入与 QRC Hook 的验证源码，仅供参考。

@@ -15,9 +15,9 @@ for arg in "$@"; do
 done
 MIRROR_PREFIX="https://git.yylx.win/"
 PACKAGE=z03ultra.zip
-FILES="libZ03Plus.so z03plus.rcc Z03Plus setup_ssh.sh update_ssh_status.sh"
+FILES="libZ03Plus.so z03plus.rcc Z03Plus Z03PlusCef Z03CefLaunch z03cef_host libZ03Cef.so libZ03GbmShim.so libZ03CrashRep.so setup_ssh.sh update_ssh_status.sh"
 INIT=/etc/init.d/zybz03qt-init
-HOOK_LINE='Z=/home/user/z03plus/Z03Plus; L=/home/user/z03plus/libZ03Plus.so; [ -f "$Z" ] && [ -f "$L" ] && ! grep -q " /usr/bin/Z03 " /proc/mounts && mount --bind "$Z" /usr/bin/Z03'
+HOOK_LINE='Z=/home/user/z03plus/Z03Plus; C=/home/user/z03plus/Z03PlusCef; W=/home/user/z03plus/Z03CefLaunch; F=/home/user/z03plus/cef/libcef.so; O=/home/user/z03plus/.cef-ok; L=/home/user/z03plus/libZ03Plus.so; B=$Z; [ -f "$C" ] && [ -f "$F" ] && [ -f "$O" ] && B=$C; [ -f "$W" ] && [ "$B" = "$C" ] && B=$W; [ -f "$B" ] && [ -f "$L" ] && umount -l /usr/bin/Z03 2>/dev/null; [ -f "$B" ] && [ -f "$L" ] && mount --bind "$B" /usr/bin/Z03'
 
 log() { echo "[z03ultra] $*"; }
 url() {
@@ -197,6 +197,8 @@ for f in $FILES; do
 done
 
 grep -q 'libZ03Plus.so' "$SRC/Z03Plus" || die "Z03Plus 未包含 DT_NEEDED 依赖"
+grep -q 'libcef.so' "$SRC/Z03PlusCef" || die "Z03PlusCef 未包含 libcef 依赖"
+cmp -s "$SRC/Z03Plus" "$SRC/Z03PlusCef" && die "Z03PlusCef 与 Z03Plus 相同"
 
 mkdir -p "$DEST/backup"
 for f in $FILES; do
@@ -206,8 +208,13 @@ done
 for f in $FILES; do
     cp -f "$SRC/$f" "$DEST/$f" || die "写入 $DEST/$f 失败"
 done
-chmod 755 "$DEST/libZ03Plus.so" "$DEST/Z03Plus" "$DEST/setup_ssh.sh" "$DEST/update_ssh_status.sh"
+chmod 755 "$DEST/libZ03Plus.so" "$DEST/Z03Plus" "$DEST/Z03PlusCef" "$DEST/Z03CefLaunch" "$DEST/z03cef_host" "$DEST/libZ03Cef.so" "$DEST/libZ03GbmShim.so" "$DEST/libZ03CrashRep.so" "$DEST/setup_ssh.sh" "$DEST/update_ssh_status.sh"
 chmod 644 "$DEST/z03plus.rcc"
+if [ -d "$DEST/cef" ]; then
+    for f in libZ03Cef.so libZ03GbmShim.so z03cef_host; do
+        [ -f "$DEST/$f" ] && cp -f "$DEST/$f" "$DEST/cef/$f" && chmod 755 "$DEST/cef/$f"
+    done
+fi
 log "文件已安装到 $DEST"
 
 if [ -f "$DEST/ssh/sshd_config" ] && [ -f "$DEST/setup_ssh.sh" ]; then
@@ -220,13 +227,14 @@ if [ -f "$DEST/ssh/sshd_config" ] && [ -f "$DEST/setup_ssh.sh" ]; then
 fi
 
 mount -o remount,rw / 2>/dev/null || die "rootfs 无法改为可写"
-if ! grep -q 'mount --bind' "$INIT" 2>/dev/null; then
+if ! grep -qF "$HOOK_LINE" "$INIT" 2>/dev/null; then
     [ -f "$INIT" ] || die "找不到 $INIT"
     if [ ! -f "$DEST/zybz03qt-init.orig" ]; then
         cp -a "$INIT" "$DEST/zybz03qt-init.orig" || die "备份 $INIT 失败"
     fi
     awk -v hook="$HOOK_LINE" '
         /z03ultra-boot\.sh/ { next }
+        /^Z=\/home\/user\/z03plus\/Z03Plus; / { next }
         /^\/usr\/bin\/zyb_z03_launch\.sh &/ && !done { print hook; done = 1 }
         { print }
     ' "$DEST/zybz03qt-init.orig" > "$INIT.z03ultra.new" || die "生成启动钩子失败"
@@ -234,12 +242,16 @@ if ! grep -q 'mount --bind' "$INIT" 2>/dev/null; then
     mv -f "$INIT.z03ultra.new" "$INIT" || die "替换 $INIT 失败"
     log "已写入持久化启动钩子"
 else
-    log "启动钩子已存在，跳过"
+    log "启动钩子已是最新"
 fi
 sync
 mount -o remount,ro / 2>/dev/null || true
 
-[ -f "$DEST/Z03Plus" ] && [ -f "$DEST/libZ03Plus.so" ] && ! grep -q " /usr/bin/Z03 " /proc/mounts && mount --bind "$DEST/Z03Plus" /usr/bin/Z03 2>/dev/null
+BOOT_BIN="$DEST/Z03Plus"
+[ -f "$DEST/Z03PlusCef" ] && [ -f "$DEST/cef/libcef.so" ] && [ -f "$DEST/.cef-ok" ] && BOOT_BIN="$DEST/Z03PlusCef"
+[ "$BOOT_BIN" = "$DEST/Z03PlusCef" ] && [ -f "$DEST/Z03CefLaunch" ] && BOOT_BIN="$DEST/Z03CefLaunch"
+umount -l /usr/bin/Z03 2>/dev/null
+[ -f "$BOOT_BIN" ] && [ -f "$DEST/libZ03Plus.so" ] && mount --bind "$BOOT_BIN" /usr/bin/Z03 2>/dev/null
 kill $(pidof Z03) 2>/dev/null
 kill $(pidof Z03Plus) 2>/dev/null
 GUARD=$(ps w | grep '[z]yb_z03_launch.sh' | awk '{print $1}' | head -n 1)
@@ -253,7 +265,7 @@ if [ -z "$PID" ]; then
     cd /home || exit 1
     if command -v setsid >/dev/null 2>&1; then D=setsid; else D=nohup; fi
     HOME=/home XDG_RUNTIME_DIR=/run/user/0 QT_LOGGING_RULES="qt.virtualkeyboard*=true" \
-        nohup $D "$DEST/Z03Plus" -platform wayland \
+        nohup $D "$BOOT_BIN" -platform wayland \
         >"$DEST/z03plus.out" 2>&1 </dev/null &
     sleep 12
     PID=$(pidof Z03)

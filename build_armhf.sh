@@ -136,8 +136,21 @@ if [[ -n "$Z03_SOURCE" ]]; then
         patchelf --add-needed "$DEVICE_LIB" "$BUILD/Z03Plus"
     fi
     echo "[extra] prepared $BUILD/Z03Plus with NEEDED $DEVICE_LIB"
+    # Add both NEEDED entries in a single patchelf pass. A second pass over an
+    # already-relocated binary moves .dynstr outside every PT_LOAD segment and
+    # the loader crashes before any constructor runs.
+    cp "$Z03_SOURCE" "$BUILD/Z03PlusCef"
+    CEF_LIB=/home/user/z03plus/cef/libcef.so
+    SHIM_LIB=/home/user/z03plus/libZ03GbmShim.so
+    ATK_LIB=/home/user/z03plus/cef/libatk-1.0.so.0
+    ATSPI_LIB=/home/user/z03plus/cef/libatspi.so.0
+    BRIDGE_LIB=/home/user/z03plus/cef/libatk-bridge-2.0.so.0
+    patchelf --add-needed "$BRIDGE_LIB" --add-needed "$ATSPI_LIB" --add-needed "$ATK_LIB" \
+             --add-needed "$SHIM_LIB" --add-needed "$DEVICE_LIB" --add-needed "$CEF_LIB" \
+             "$BUILD/Z03PlusCef"
+    echo "[extra] prepared $BUILD/Z03PlusCef with NEEDED cef + shim + atk/atspi"
 fi
 
 echo
-ls -l "$BUILD/libZ03Plus.so" "$BUILD/libZ03PlusExporter.so" "$BUILD/z03plus.rcc"
+ls -l "$BUILD/libZ03Plus.so" "$BUILD/libZ03PlusExporter.so" "$BUILD/z03plus.rcc" "$BUILD/Z03PlusCef"
 echo "ok"

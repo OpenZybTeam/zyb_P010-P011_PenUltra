@@ -34,6 +34,7 @@ Rectangle {
     property bool nixPageVisible: false
     property bool deviceInfoPageVisible: false
     property bool browserPageVisible: false
+    property bool browserEnginePageVisible: false
     property bool aboutPageVisible: false
     property bool transferPageVisible: false
     property bool appsPageVisible: false
@@ -275,9 +276,17 @@ property bool aiHistoryVisible: false
                     width: root.tileWidth
                     compact: root.portraitLayout
                     text: qsTr("浏览器")
-                    subtitle: qsTr("内置 WebKit 引擎")
+                    subtitle: qsTr("QtWebEngine / CEF 双内核")
                     accent: "#4C8DFF"
                     onClicked: root.browserPageVisible = true
+                }
+                MaterialTile {
+                    width: root.tileWidth
+                    compact: root.portraitLayout
+                    text: qsTr("浏览器内核")
+                    subtitle: qsTr("切换内置与 CEF 引擎")
+                    accent: "#7C6BFF"
+                    onClicked: root.browserEnginePageVisible = true
                 }
                 MaterialTile {
                     width: root.tileWidth
@@ -477,9 +486,32 @@ property bool aiHistoryVisible: false
         onLoaded: {
             if (!item) return
             item.closeRequested.connect(function() { root.browserPageVisible = false })
-            if (root.pendingBrowserUrl.length > 0) {
+            if (root.pendingBrowserUrl.length > 0 && item.openUrl) {
                 item.openUrl(root.pendingBrowserUrl)
                 root.pendingBrowserUrl = ""
+            }
+        }
+        onStatusChanged: {
+            if (status === Loader.Error) {
+                root.browserPageVisible = false
+                root.showTip(qsTr("浏览器页面加载失败：") + (sourceComponent ? sourceComponent.errorString() : ""))
+            }
+        }
+    }
+    Loader {
+        id: browserEngineLoader
+        anchors.fill: parent
+        z: 56
+        active: root.browserEnginePageVisible
+        source: active ? "qrc:/ZybQmlFiles/ZybSet/BrowserEnginePage.qml" : ""
+        onLoaded: {
+            if (!item) return
+            item.closeRequested.connect(function() { root.browserEnginePageVisible = false })
+        }
+        onStatusChanged: {
+            if (status === Loader.Error) {
+                root.browserEnginePageVisible = false
+                root.showTip(qsTr("内核设置页加载失败：") + (sourceComponent ? sourceComponent.errorString() : ""))
             }
         }
     }

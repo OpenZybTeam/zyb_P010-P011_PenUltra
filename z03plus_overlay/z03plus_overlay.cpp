@@ -12,6 +12,7 @@
 #include <QJsonArray>
 #include <QJsonDocument>
 #include <QJsonObject>
+#include <QLibrary>
 #include <QMap>
 #include <QNetworkAccessManager>
 #include <QNetworkInterface>
@@ -39,6 +40,537 @@
 #include <QVariantList>
 #include <QVariantMap>
 #include <QtQml/qqml.h>
+#include <QQmlEngine>
+#include <QJSEngine>
+#include <dlfcn.h>
+#include <unistd.h>
+#include <errno.h>
+#include <stdio.h>
+#include <fcntl.h>
+#include <string.h>
+#include <signal.h>
+#include <ucontext.h>
+
+#define Z03ULTRA_VERSION "1.8.11"
+
+static QString gCefPluginError;
+
+static bool cefLibMapped()
+{
+    QFile maps(QStringLiteral("/proc/self/maps"));
+    if (!maps.open(QIODevice::ReadOnly))
+        return false;
+    return maps.readAll().contains("libcef.so");
+}
+
+static char gCefAltStack[65536];
+
+struct Z03CefMap { unsigned long lo, hi; const char *name; int namelen; char exec; char perm[5]; };
+static struct Z03CefMap gCefMapTable[2048];
+static int gCefMapCount;
+
+static int z03HexVal(char c)
+{
+    if (c >= '0' && c <= '9') return c - '0';
+    if (c >= 'a' && c <= 'f') return c - 'a' + 10;
+    if (c >= 'A' && c <= 'F') return c - 'A' + 10;
+    return -1;
+}
+
+static int z03AppendStr(char *buf, int n, int cap, const char *str, int len)
+{
+    if (len < 0) {
+        len = 0;
+        while (str[len])
+            len++;
+    }
+    for (int i = 0; i < len && n < cap; i++)
+        buf[n++] = str[i];
+    return n;
+}
+
+static int z03AppendHex(char *buf, int n, int cap, unsigned long v)
+{
+    char tmp[16];
+    int t = 0;
+    buf[n++] = '0';
+    buf[n++] = 'x';
+    if (v == 0)
+        tmp[t++] = '0';
+    while (v) {
+        tmp[t++] = "0123456789abcdef"[v & 0xf];
+        v >>= 4;
+    }
+    while (t && n < cap)
+        buf[n++] = tmp[--t];
+    return n;
+}
+
+static int z03AppendDec(char *buf, int n, int cap, unsigned long v)
+{
+    char tmp[20];
+    int t = 0;
+    if (v == 0)
+        tmp[t++] = '0';
+    while (v) {
+        tmp[t++] = (char)('0' + (v % 10));
+        v /= 10;
+    }
+    while (t && n < cap)
+        buf[n++] = tmp[--t];
+    return n;
+}
+
+static void z03ParseMapTable(char *mbuf, size_t total)
+{
+    gCefMapCount = 0;
+    size_t i = 0;
+    while (i < total && gCefMapCount < 2048) {
+        size_t e = i;
+        while (e < total && mbuf[e] != '\n')
+            e++;
+        size_t j = i;
+        unsigned long lo = 0;
+        unsigned long hi = 0;
+        int k = 0;
+        int d;
+        while (j < e && k < 8 && (d = z03HexVal(mbuf[j])) >= 0) {
+            lo = (lo << 4) | (unsigned long)d;
+            j++;
+            k++;
+        }
+        if (k == 8 && j < e && mbuf[j] == '-') {
+            j++;
+            k = 0;
+            while (j < e && k < 8 && (d = z03HexVal(mbuf[j])) >= 0) {
+                hi = (hi << 4) | (unsigned long)d;
+                j++;
+                k++;
+            }
+            if (k == 8 && j + 3 < e) {
+                const char *name = nullptr;
+                int nlen = 0;
+                for (size_t t = j; t + 1 < e; t++) {
+                    if (mbuf[t] == ' ' && mbuf[t + 1] == '/') {
+                        name = mbuf + t + 1;
+                        nlen = (int)(e - t - 1);
+                        break;
+                    }
+                }
+                gCefMapTable[gCefMapCount].lo = lo;
+                gCefMapTable[gCefMapCount].hi = hi;
+                gCefMapTable[gCefMapCount].name = name;
+                gCefMapTable[gCefMapCount].namelen = nlen;
+                gCefMapTable[gCefMapCount].exec = (j + 3 < e && mbuf[j + 3] == 'x');
+                for (int pi = 0; pi < 4; pi++)
+                    gCefMapTable[gCefMapCount].perm[pi] =
+                        (j + 1 + pi < e) ? mbuf[j + 1 + pi] : '?';
+                gCefMapTable[gCefMapCount].perm[4] = 0;
+                gCefMapCount++;
+            }
+        }
+        i = e + 1;
+    }
+}
+
+static int z03ResolveAddr(unsigned long value, char *buf, int cap, int *n)
+{
+    for (int i = 0; i < gCefMapCount; i++) {
+        if (value >= gCefMapTable[i].lo && value < gCefMapTable[i].hi) {
+            if (gCefMapTable[i].name) {
+                *n = z03AppendStr(buf, *n, cap, gCefMapTable[i].name, gCefMapTable[i].namelen);
+                buf[(*n)++] = '+';
+            } else {
+                *n = z03AppendStr(buf, *n, cap, "[anon]", -1);
+                buf[(*n)++] = '+';
+            }
+            *n = z03AppendHex(buf, *n, cap, value - gCefMapTable[i].lo);
+            return 1;
+        }
+    }
+    return 0;
+}
+
+static void z03WriteResolved(int fd, const char *prefix, unsigned long value)
+{
+    char line[384];
+    int n = 0;
+    n = z03AppendStr(line, n, 340, prefix, -1);
+    if (!z03ResolveAddr(value, line, 340, &n)) {
+        n = z03AppendStr(line, n, 340, "<unmapped> ", -1);
+        n = z03AppendHex(line, n, 340, value);
+    }
+    line[n++] = '\n';
+    write(fd, line, (size_t)n);
+}
+
+static void z03WriteFaultMap(int fd, unsigned long value)
+{
+    for (int i = 0; i < gCefMapCount; i++) {
+        if (value < gCefMapTable[i].lo || value >= gCefMapTable[i].hi)
+            continue;
+        char line[128];
+        int n = 0;
+        n = z03AppendStr(line, n, 120, "fault map perm=", -1);
+        n = z03AppendStr(line, n, 120, gCefMapTable[i].perm, 4);
+        n = z03AppendStr(line, n, 120, " off=", -1);
+        n = z03AppendHex(line, n, 120, value - gCefMapTable[i].lo);
+        n = z03AppendStr(line, n, 120, " lo=", -1);
+        n = z03AppendHex(line, n, 120, gCefMapTable[i].lo);
+        line[n++] = '\n';
+        write(fd, line, (size_t)n);
+        return;
+    }
+}
+
+static void z03cefCrashDump(int sig, void *addr, unsigned long pc, unsigned long lr, unsigned long sp)
+{
+    int fd = open("/home/user/z03plus/cef/crash.txt", O_WRONLY | O_CREAT | O_APPEND, 0644);
+    if (fd < 0)
+        return;
+    char line[512];
+    int n = 0;
+    n = z03AppendStr(line, n, 460, "crash signal=", -1);
+    n = z03AppendDec(line, n, 460, (unsigned long)sig);
+    n = z03AppendStr(line, n, 460, " pid=", -1);
+    n = z03AppendDec(line, n, 460, (unsigned long)getpid());
+    n = z03AppendStr(line, n, 460, " ppid=", -1);
+    n = z03AppendDec(line, n, 460, (unsigned long)getppid());
+    int cf = open("/proc/self/cmdline", O_RDONLY);
+    if (cf >= 0) {
+        char cmd[192];
+        ssize_t got = read(cf, cmd, sizeof(cmd));
+        close(cf);
+        if (got > 0) {
+            n = z03AppendStr(line, n, 460, " cmd=", -1);
+            for (ssize_t i = 0; i < got && n < 450; i++)
+                line[n++] = cmd[i] ? cmd[i] : ' ';
+        }
+    }
+    line[n++] = '\n';
+    write(fd, line, (size_t)n);
+
+    static char mbuf[524288];
+    size_t total = 0;
+    int mf = open("/proc/self/maps", O_RDONLY);
+    int mferr = mf < 0 ? errno : 0;
+    if (mf >= 0) {
+        ssize_t got;
+        while (total + 1 < sizeof(mbuf)) {
+            got = read(mf, mbuf + total, sizeof(mbuf) - 1 - total);
+            if (got > 0) {
+                total += (size_t)got;
+                continue;
+            }
+            if (got < 0 && errno == EINTR)
+                continue;
+            if (got < 0)
+                mferr = errno;
+            break;
+        }
+        close(mf);
+        mbuf[total] = 0;
+    }
+    z03ParseMapTable(mbuf, total);
+    {
+        char meta[128];
+        int mn = 0;
+        mn = z03AppendStr(meta, mn, 110, "maps bytes=", -1);
+        mn = z03AppendDec(meta, mn, 110, (unsigned long)total);
+        mn = z03AppendStr(meta, mn, 110, " entries=", -1);
+        mn = z03AppendDec(meta, mn, 110, (unsigned long)gCefMapCount);
+        mn = z03AppendStr(meta, mn, 110, " err=", -1);
+        mn = z03AppendDec(meta, mn, 110, (unsigned long)mferr);
+        meta[mn++] = '\n';
+        write(fd, meta, (size_t)mn);
+    }
+    z03WriteResolved(fd, "pc: ", pc);
+    z03WriteResolved(fd, "lr: ", lr);
+    z03WriteResolved(fd, "fault: ", (unsigned long)addr);
+    z03WriteFaultMap(fd, (unsigned long)addr);
+    z03WriteResolved(fd, "sp: ", sp);
+
+    const unsigned long *st = (const unsigned long *)sp;
+    int hits = 0;
+    for (int i = 0; i < 768 && hits < 24; i++) {
+        unsigned long v = st[i];
+        unsigned long a = v & ~1UL;
+        if (a < 0x1000)
+            continue;
+        for (int m = 0; m < gCefMapCount && hits < 24; m++) {
+            if (!gCefMapTable[m].exec)
+                continue;
+            if (a >= gCefMapTable[m].lo && a < gCefMapTable[m].hi) {
+                z03WriteResolved(fd, "ret: ", a);
+                hits++;
+                break;
+            }
+        }
+    }
+    close(fd);
+}
+
+static void z03cefCrashHandler(int sig, siginfo_t *si, void *ctx)
+{
+#ifdef __arm__
+    ucontext_t *uc = (ucontext_t *)ctx;
+    z03cefCrashDump(sig, si->si_addr, (unsigned long)uc->uc_mcontext.arm_pc,
+                    (unsigned long)uc->uc_mcontext.arm_lr,
+                    (unsigned long)uc->uc_mcontext.arm_sp);
+#else
+    z03cefCrashDump(sig, si->si_addr, 0, 0, 0);
+#endif
+    _exit(139);
+}
+
+static void z03cefInstallCrashHandler()
+{
+    stack_t ss;
+    struct sigaction sa;
+    ss.ss_sp = gCefAltStack;
+    ss.ss_size = sizeof(gCefAltStack);
+    ss.ss_flags = 0;
+    sigaltstack(&ss, nullptr);
+    memset(&sa, 0, sizeof(sa));
+    sa.sa_sigaction = z03cefCrashHandler;
+    sa.sa_flags = SA_SIGINFO | SA_ONSTACK;
+    sigemptyset(&sa.sa_mask);
+    sigaction(SIGSEGV, &sa, nullptr);
+    sigaction(SIGBUS, &sa, nullptr);
+    sigaction(SIGILL, &sa, nullptr);
+    sigaction(SIGABRT, &sa, nullptr);
+}
+
+static void z03cefBreadcrumb(const char *text)
+{
+    QFile f(QStringLiteral("/home/user/z03plus/cef/stage.txt"));
+    if (!f.open(QIODevice::WriteOnly | QIODevice::Append | QIODevice::Text))
+        return;
+    f.write(QDateTime::currentDateTime().toString(Qt::ISODate).toUtf8());
+    f.write(" ");
+    f.write(text);
+    f.write("\n");
+}
+
+static void z03cefAppStartup()
+{
+    z03cefBreadcrumb("qcoreapp");
+}
+Q_COREAPP_STARTUP_FUNCTION(z03cefAppStartup)
+
+static const char *z03CefLauncherPath()
+{
+    return "/home/user/z03plus/Z03CefLaunch";
+}
+
+static bool z03WriteCefLauncher()
+{
+    static const char script[] =
+        "#!/bin/sh\n"
+        "D=/home/user/z03plus\n"
+        "[ -x \"$D/Z03PlusCef\" ] || exit 1\n"
+        "ln -f \"$D/Z03PlusCef\" \"$D/Z03\" 2>/dev/null\n"
+        ": > \"$D/cef/launch.log\"\n"
+        "env LD_BIND_NOW=1 \"$D/Z03\" \"$@\" >>\"$D/cef/launch.log\" 2>&1\n"
+        "rc=$?\n"
+        "echo \"$(date '+%Y-%m-%dT%H:%M:%S') exit rc=$rc\" >>\"$D/cef/launch.log\"\n"
+        "exit $rc\n";
+    QFile f(QString::fromLatin1(z03CefLauncherPath()));
+    if (!f.open(QIODevice::WriteOnly | QIODevice::Truncate))
+        return false;
+    const qint64 wrote = f.write(script, sizeof(script) - 1);
+    f.close();
+    if (wrote != (qint64)(sizeof(script) - 1))
+        return false;
+    return f.setPermissions(QFileDevice::ReadOwner | QFileDevice::WriteOwner
+                            | QFileDevice::ExeOwner | QFileDevice::ReadGroup
+                            | QFileDevice::ExeGroup | QFileDevice::ReadOther
+                            | QFileDevice::ExeOther);
+}
+
+__attribute__((constructor)) static void z03cefStartupCheck()
+{
+    const char *selftest = getenv("Z03_CEF_SELFTEST");
+    const bool probe = selftest && strcmp(selftest, "1") == 0;
+    z03cefBreadcrumb(probe ? "ctor probe" : "ctor normal");
+    if (!cefLibMapped()) {
+        if (probe)
+            _exit(2);
+        return;
+    }
+    z03cefBreadcrumb("libcef mapped");
+    z03cefInstallCrashHandler();
+    if (!probe)
+        return;
+    /* dlopen from an ELF constructor re-enters the dynamic loader while it is
+       still running _dl_init; that is what crashed here. Do nothing but wait
+       and confirm libcef can stay mapped, then let the plugin initialise CEF
+       from the Qt thread when the browser page is opened. */
+    sleep(5);
+    _exit(cefLibMapped() ? 0 : 3);
+}
+
+static void copyBundledFile(const char *name)
+{
+    const QString target = QStringLiteral("/home/user/z03plus/cef/") + QLatin1String(name);
+    if (QFile::exists(target))
+        return;
+    QFile src(QStringLiteral(":/ZybQmlFiles/cef-libs/") + QLatin1String(name));
+    if (!src.open(QIODevice::ReadOnly))
+        return;
+    QFile out(target);
+    if (!out.open(QIODevice::WriteOnly))
+        return;
+    out.write(src.readAll());
+    out.close();
+    QFile::setPermissions(target, QFile::ReadOwner | QFile::WriteOwner | QFile::ReadGroup
+                                      | QFile::ReadOther | QFile::ExeOwner | QFile::ExeGroup
+                                      | QFile::ExeOther);
+}
+
+static void ensureCefPluginFile()
+{
+    const QString dir = QStringLiteral("/home/user/z03plus/cef");
+    const QString src = QStringLiteral("/home/user/z03plus/libZ03Cef.so");
+    const QString dst = dir + QStringLiteral("/libZ03Cef.so");
+    if (!QFile::exists(src) || !QDir(dir).exists())
+        return;
+    QFile in(src);
+    if (!in.open(QIODevice::ReadOnly))
+        return;
+    const QByteArray data = in.readAll();
+    QFile cur(dst);
+    if (cur.open(QIODevice::ReadOnly)) {
+        const bool same = cur.readAll() == data;
+        cur.close();
+        if (same)
+            return;
+    }
+    QFile out(dst);
+    if (!out.open(QIODevice::WriteOnly | QIODevice::Truncate))
+        return;
+    out.write(data);
+    out.close();
+    QFile::setPermissions(dst, QFile::ReadOwner | QFile::WriteOwner | QFile::ReadGroup
+                              | QFile::ReadOther | QFile::ExeOwner | QFile::ExeGroup
+                              | QFile::ExeOther);
+}
+
+// libcef.so 把 ld-linux-armhf.so.3 写进了 DT_NEEDED，glibc 2.27 会把它当作
+// 普通共享库再加载一份动态加载器。之后任何 dlopen 在排序依赖时都会踩到这份
+// 重复映射，固定崩在 ld-2.27.so 的同一偏移。把这条依赖改指向已经存在的
+// libc.so.6，只改 4 字节，不改动 ELF 布局。
+static bool patchCefLibraryNeeded()
+{
+    const QString path = QStringLiteral("/home/user/z03plus/cef/libcef.so");
+    QFile f(path);
+    if (!f.open(QIODevice::ReadWrite))
+        return false;
+    const QByteArray elf = f.read(52);
+    if (elf.size() < 52 || elf.at(0) != '\x7f' || elf.at(1) != 'E' || elf.at(2) != 'L'
+        || elf.at(3) != 'F' || elf.at(4) != 1 || elf.at(5) != 1) {
+        return false;
+    }
+    auto le16 = [](const QByteArray &b, int o) {
+        return quint16(quint8(b.at(o)) | (quint16(quint8(b.at(o + 1))) << 8));
+    };
+    auto le32 = [](const QByteArray &b, int o) {
+        return quint32(quint8(b.at(o)))
+               | (quint32(quint8(b.at(o + 1))) << 8)
+               | (quint32(quint8(b.at(o + 2))) << 16)
+               | (quint32(quint8(b.at(o + 3))) << 24);
+    };
+    const quint32 phoff = le32(elf, 28);
+    const quint16 phentsize = le16(elf, 42);
+    const quint16 phnum = le16(elf, 44);
+    quint32 dynOff = 0;
+    quint32 dynSize = 0;
+    for (quint16 i = 0; i < phnum; ++i) {
+        if (!f.seek(phoff + quint32(i) * phentsize))
+            return false;
+        const QByteArray ph = f.read(32);
+        if (ph.size() < 32)
+            return false;
+        if (le32(ph, 0) == 2) {
+            dynOff = le32(ph, 4);
+            dynSize = le32(ph, 16);
+        }
+    }
+    if (dynOff == 0 || dynSize < 16)
+        return false;
+    if (!f.seek(dynOff))
+        return false;
+    const QByteArray dyn = f.read(dynSize);
+    if (dyn.size() < 16)
+        return false;
+    quint32 strOff = 0;
+    quint32 strSize = 0;
+    for (int i = 0; i + 8 <= dyn.size(); i += 8) {
+        const quint32 tag = le32(dyn, i);
+        if (tag == 0)
+            break;
+        if (tag == 5)
+            strOff = le32(dyn, i + 4);
+        else if (tag == 10)
+            strSize = le32(dyn, i + 4);
+    }
+    if (strOff == 0 || strSize < 16)
+        return false;
+    if (!f.seek(strOff))
+        return false;
+    const QByteArray strtab = f.read(strSize);
+    if (uint(strtab.size()) != strSize)
+        return false;
+    auto findName = [&strtab](const QByteArray &name) {
+        int pos = 0;
+        while ((pos = strtab.indexOf(name, pos)) >= 0) {
+            const bool startOk = pos == 0 || strtab.at(pos - 1) == '\0';
+            const int end = pos + name.size();
+            const bool endOk = end < strtab.size() && strtab.at(end) == '\0';
+            if (startOk && endOk)
+                return pos;
+            pos = end;
+        }
+        return -1;
+    };
+    const int ldIdx = findName(QByteArrayLiteral("ld-linux-armhf.so.3"));
+    const int libcIdx = findName(QByteArrayLiteral("libc.so.6"));
+    if (ldIdx < 0 || libcIdx < 0)
+        return true;
+    bool changed = false;
+    for (int i = 0; i + 8 <= dyn.size(); i += 8) {
+        const quint32 tag = le32(dyn, i);
+        if (tag == 0)
+            break;
+        if (tag != 1 || le32(dyn, i + 4) != quint32(ldIdx))
+            continue;
+        if (!f.seek(dynOff + quint32(i) + 4))
+            return false;
+        QByteArray value(4, '\0');
+        char *raw = value.data();
+        raw[0] = char(quint8(libcIdx & 0xff));
+        raw[1] = char(quint8((libcIdx >> 8) & 0xff));
+        raw[2] = char(quint8((libcIdx >> 16) & 0xff));
+        raw[3] = char(quint8((libcIdx >> 24) & 0xff));
+        if (f.write(value) != 4)
+            return false;
+        changed = true;
+    }
+    if (changed)
+        f.flush();
+    return true;
+}
+
+static void writeCefPluginError()
+{
+    QFile out(QStringLiteral("/home/user/z03plus/cef/plugin-error.txt"));
+    if (!out.open(QIODevice::WriteOnly | QIODevice::Truncate | QIODevice::Text))
+        return;
+    out.write(QDateTime::currentDateTime().toString(Qt::ISODate).toUtf8());
+    out.write("\n");
+    out.write(gCefPluginError.toUtf8());
+    out.write("\n");
+}
 #include <algorithm>
 #include <signal.h>
 #include <sys/stat.h>
@@ -1595,6 +2127,137 @@ public:
     QString status() const { return mStatus; }
     bool canGoBack() const { return mHistoryIndex > 0; }
 
+    // Browser engine preference lives next to ai.ini so it survives updates.
+    static QString engineConfigPath() { return QStringLiteral("/home/user/z03plus/browser.ini"); }
+
+    Q_INVOKABLE QString engine() const
+    {
+        QSettings cfg(engineConfigPath(), QSettings::IniFormat);
+        const QString name = cfg.value(QStringLiteral("browser/engine")).toString();
+        return name == QStringLiteral("cef") ? QStringLiteral("cef") : QStringLiteral("qtwebengine");
+    }
+
+    Q_INVOKABLE void setEngine(const QString &name)
+    {
+        QSettings cfg(engineConfigPath(), QSettings::IniFormat);
+        cfg.setValue(QStringLiteral("browser/engine"),
+                     name == QStringLiteral("cef") ? QStringLiteral("cef") : QStringLiteral("qtwebengine"));
+        cfg.sync();
+    }
+
+    Q_INVOKABLE bool ensureCefPlugin()
+    {
+        static bool loaded = false;
+        static bool ok = false;
+        if (loaded)
+            return ok;
+        loaded = true;
+        ok = loadCefPlugin();
+        return ok;
+    }
+
+    Q_INVOKABLE QString cefPluginError() const { return gCefPluginError; }
+
+    static void ensureCefSupportLibs()
+    {
+        const QString dir = QStringLiteral("/home/user/z03plus/cef");
+        static const char *const bundled[] = { "libxcb.so.1", "libZ03GbmShim.so",
+                                                "libatk-1.0.so.0", "libatspi.so.0",
+                                                "libatk-bridge-2.0.so.0" };
+        for (const char *name : bundled) {
+            const QString target = dir + QLatin1Char('/') + QLatin1String(name);
+            if (!QDir(dir).exists())
+                continue;
+            QFile src(QStringLiteral(":/ZybQmlFiles/cef-libs/") + QLatin1String(name));
+            if (!src.open(QIODevice::ReadOnly))
+                continue;
+            const QByteArray data = src.readAll();
+            QFile existing(target);
+            if (existing.open(QIODevice::ReadOnly) && existing.readAll() == data) {
+                existing.close();
+                continue;
+            }
+            existing.close();
+            QFile out(target);
+            if (!out.open(QIODevice::WriteOnly | QIODevice::Truncate))
+                continue;
+            out.write(data);
+            out.close();
+            QFile::setPermissions(target, QFile::ReadOwner | QFile::WriteOwner
+                                              | QFile::ReadGroup | QFile::ReadOther
+                                              | QFile::ExeOwner | QFile::ExeGroup
+                                              | QFile::ExeOther);
+        }
+        static const char *const order[] = {
+            "libXau.so.6", "libXdmcp.so.6", "libxcb.so.1", "libbsd.so.0",
+            "libX11.so.6", "libXext.so.6", "libXfixes.so.3", "libXrender.so.1",
+            "libXdamage.so.1", "libXcomposite.so.1", "libXrandr.so.2"
+        };
+        for (const char *name : order) {
+            const QString path = dir + QLatin1Char('/') + QLatin1String(name);
+            if (QFile::exists(path)) {
+                QLibrary dep(path);
+                dep.setLoadHints(QLibrary::ResolveAllSymbolsHint);
+                dep.load();
+            }
+        }
+        patchCefLibraryNeeded();
+    }
+
+    Q_INVOKABLE bool loadCefPlugin()
+    {
+        gCefPluginError.clear();
+        ensureCefPluginFile();
+        const QString path = QStringLiteral("/home/user/z03plus/cef/libZ03Cef.so");
+        if (!QFile::exists(path)) {
+            gCefPluginError = QStringLiteral("未安装 libZ03Cef.so");
+            return false;
+        }
+        if (!QFile::exists(QStringLiteral("/home/user/z03plus/z03cef_host"))) {
+            gCefPluginError = QStringLiteral("缺少 CEF 子进程宿主 z03cef_host，请更新 Z03Ultra 后重试");
+            writeCefPluginError();
+            return false;
+        }
+        ensureCefSupportLibs();
+        if (!cefLibMapped()) {
+            gCefPluginError = QStringLiteral("CEF 内核未启用：组件已安装，但当前以普通模式启动。"
+                                             "请重新安装/更新 Z03Ultra 后重启，或点“启用 CEF”切换启动模式。");
+            writeCefPluginError();
+            return false;
+        }
+        QLibrary lib(path);
+        if (!lib.load()) {
+            gCefPluginError = QStringLiteral("加载插件失败：%1").arg(lib.errorString());
+            writeCefPluginError();
+            return false;
+        }
+        typedef void (*RegisterFn)();
+        RegisterFn reg = reinterpret_cast<RegisterFn>(lib.resolve("z03cef_register_qml"));
+        if (!reg) {
+            gCefPluginError = QStringLiteral("插件缺少导出函数 z03cef_register_qml：%1").arg(lib.errorString());
+            writeCefPluginError();
+            return false;
+        }
+        reg();
+        return true;
+    }
+
+    Q_INVOKABLE QVariantMap cefStatus() const
+    {
+        const QString base = QStringLiteral("/home/user/z03plus/cef");
+        QVariantMap info;
+        info.insert(QStringLiteral("path"), base);
+        info.insert(QStringLiteral("installed"),
+                    QFile::exists(base + QStringLiteral("/libcef.so"))
+                    && QFile::exists(base + QStringLiteral("/z03cef_host")));
+        QString version;
+        QFile vf(base + QStringLiteral("/version.txt"));
+        if (vf.open(QIODevice::ReadOnly | QIODevice::Text))
+            version = QString::fromUtf8(vf.readAll()).trimmed();
+        info.insert(QStringLiteral("version"), version);
+        return info;
+    }
+
     Q_INVOKABLE void load(const QString &input)
     {
         const QUrl url = normalize(input);
@@ -2729,9 +3392,403 @@ private:
 };
 
 
-#define Z03ULTRA_VERSION "1.5.3"
 #define Z03ULTRA_REPO "OpenZybTeam/zyb_P010-P011_PenUltra"
 #define Z03ULTRA_MIRROR_PREFIX "https://git.yylx.win/"
+
+#define Z03CEF_PACKAGE_URL "https://r2.cfknb.vip/z03plus/cef/cef120-linuxarm-v5.tar.xz"
+#define Z03CEF_PACKAGE_SHA256 "ad33ada92680bc66a8ec31f1d3c80d6b8b849427481e0702bd576b0f5af86988"
+#define Z03CEF_PACKAGE_NAME "cef120-linuxarm-v5.tar.xz"
+
+
+class Z03PlusCefService : public QObject
+{
+    Q_OBJECT
+    Q_PROPERTY(QString state READ state NOTIFY changed)
+    Q_PROPERTY(QString status READ status NOTIFY changed)
+    Q_PROPERTY(QString error READ error NOTIFY changed)
+    Q_PROPERTY(int progress READ progress NOTIFY changed)
+    Q_PROPERTY(qint64 received READ received NOTIFY changed)
+    Q_PROPERTY(qint64 total READ total NOTIFY changed)
+    Q_PROPERTY(int speed READ speed NOTIFY changed)
+    Q_PROPERTY(bool installed READ installed NOTIFY changed)
+    Q_PROPERTY(bool busy READ busy NOTIFY changed)
+public:
+    explicit Z03PlusCefService(QObject *parent = nullptr) : QObject(parent)
+    {
+        mTimeout.setSingleShot(true);
+        connect(&mTimeout, &QTimer::timeout, this, [this]() {
+            if (mReply)
+                mReply->abort();
+        });
+    }
+
+    QString state() const { return mState; }
+    QString status() const { return mStatus; }
+    QString error() const { return mError; }
+    int progress() const { return mProgress; }
+    qint64 received() const { return mReceived; }
+    qint64 total() const { return mTotal; }
+    int speed() const { return mSpeed; }
+    bool busy() const { return mBusy; }
+
+    bool installed() const
+    {
+        return QFile::exists(installDir() + QStringLiteral("/libcef.so"))
+               && QFile::exists(installDir() + QStringLiteral("/z03cef_host"))
+               && QFile::exists(installDir() + QStringLiteral("/libZ03Cef.so"));
+    }
+
+    Q_INVOKABLE void install()
+    {
+        if (mBusy)
+            return;
+        mError.clear();
+        mReceived = 0;
+        mTotal = 0;
+        mSpeed = 0;
+        mProgress = 0;
+        mBusy = true;
+        QDir().mkpath(downloadDir());
+        const QString part = downloadDir() + QLatin1Char('/') + QStringLiteral(Z03CEF_PACKAGE_NAME) + QStringLiteral(".part");
+        mFile.setFileName(part);
+        if (!mFile.open(QIODevice::WriteOnly)) {
+            fail(QStringLiteral("无法写入 %1").arg(part));
+            return;
+        }
+        mDownloaded = 0;
+        mSpeedClock = QDateTime::currentMSecsSinceEpoch();
+        mSpeedBytes = 0;
+        setState(QStringLiteral("downloading"), QStringLiteral("正在连接下载源…"));
+        QNetworkRequest request{QUrl(QStringLiteral(Z03CEF_PACKAGE_URL))};
+        request.setAttribute(QNetworkRequest::FollowRedirectsAttribute, true);
+        request.setRawHeader("User-Agent", "Z03Ultra-Cef");
+        mReply = mManager.get(request);
+        connect(mReply, &QNetworkReply::readyRead, this, [this]() {
+            if (!mReply || !mFile.isOpen())
+                return;
+            const QByteArray chunk = mReply->readAll();
+            if (chunk.isEmpty())
+                return;
+            mFile.write(chunk);
+            mDownloaded += chunk.size();
+            mReceived = mDownloaded;
+            mSpeedBytes += chunk.size();
+            const qint64 now = QDateTime::currentMSecsSinceEpoch();
+            const qint64 span = now - mSpeedClock;
+            if (span >= 900) {
+                mSpeed = int(mSpeedBytes * 1000 / span / 1024);
+                mSpeedClock = now;
+                mSpeedBytes = 0;
+            }
+            if (mTotal > 0)
+                mProgress = int(mDownloaded * 100 / mTotal);
+            mStatus = QStringLiteral("正在下载 CEF 组件… %1%  ·  %2 KB/s")
+                          .arg(mProgress)
+                          .arg(mSpeed);
+            emit changed();
+        });
+        connect(mReply, &QNetworkReply::downloadProgress, this, [this](qint64 received, qint64 total) {
+            if (total > 0 && mTotal != total)
+                mTotal = total;
+            if (total > 0 && mDownloaded < received) {
+                mReceived = received;
+                mProgress = int(received * 100 / total);
+            }
+            emit changed();
+        });
+        connect(mReply, QOverload<QNetworkReply::NetworkError>::of(&QNetworkReply::error), this,
+                [this](QNetworkReply::NetworkError) {
+                    if (mReply)
+                        mReply->abort();
+                });
+        connect(mReply, &QNetworkReply::finished, this, [this]() { onDownloadFinished(); });
+        mTimeout.start(900000);
+    }
+
+    Q_INVOKABLE void cancel()
+    {
+        if (mReply) {
+            mReply->abort();
+        } else if (mExtractor.state() != QProcess::NotRunning) {
+            mExtractor.kill();
+        }
+    }
+
+    Q_INVOKABLE QVariantMap cefInfo() const
+    {
+        QVariantMap info;
+        info.insert(QStringLiteral("installed"), installed());
+        info.insert(QStringLiteral("path"), installDir());
+        QString version;
+        QFile vf(installDir() + QStringLiteral("/version.txt"));
+        if (vf.open(QIODevice::ReadOnly | QIODevice::Text))
+            version = QString::fromUtf8(vf.readAll()).trimmed();
+        info.insert(QStringLiteral("version"), version);
+        info.insert(QStringLiteral("active"), cefLibMapped());
+        return info;
+    }
+
+    Q_INVOKABLE bool cefActive() const { return cefLibMapped(); }
+
+    Q_INVOKABLE QString enableCefMode()
+    {
+        const QString base = QStringLiteral("/home/user/z03plus");
+        const QString bin = base + QStringLiteral("/Z03PlusCef");
+        if (!QFile::exists(bin))
+            return QStringLiteral("缺少 CEF 启动模式文件 Z03PlusCef，请更新 Z03Ultra 后重试");
+        z03cefBreadcrumb("enable begin");
+        ensureCefPluginFile();
+        Z03PlusBrowserService::ensureCefSupportLibs();
+        if (!installed())
+            return QStringLiteral("CEF 组件未安装完整，请先下载安装");
+        static const char *const required[] = {
+            "/home/user/z03plus/cef/libcef.so",
+            "/home/user/z03plus/cef/libatk-1.0.so.0",
+            "/home/user/z03plus/cef/libatspi.so.0",
+            "/home/user/z03plus/cef/libatk-bridge-2.0.so.0",
+            "/home/user/z03plus/libZ03GbmShim.so",
+            "/home/user/z03plus/z03cef_host"
+        };
+        for (const char *path : required) {
+            const QString p = QString::fromLatin1(path);
+            if (!QFile::exists(p))
+                return QStringLiteral("缺少依赖库 %1，请更新 Z03Ultra 后重试").arg(p);
+        }
+        patchCefLibraryNeeded();
+        z03cefBreadcrumb("enable patched");
+        if (!z03WriteCefLauncher())
+            return QStringLiteral("无法写入 CEF 启动脚本，请检查存储空间后重试");
+        z03cefBreadcrumb("enable launcher");
+        const QString rep = base + QStringLiteral("/libZ03CrashRep.so");
+        const QString log = installDir() + QStringLiteral("/selftest.log");
+        QString cmd = QStringLiteral("echo probe-start > %1; ").arg(log);
+        cmd += QStringLiteral("Z03_CEF_SELFTEST=1 LD_BIND_NOW=1 ");
+        if (QFile::exists(rep))
+            cmd += QStringLiteral("LD_PRELOAD=%1 ").arg(rep);
+        cmd += QStringLiteral("exec %1 >>%2 2>&1").arg(bin).arg(log);
+        QProcess probe;
+        z03cefBreadcrumb("enable probe spawn");
+        probe.start(QStringLiteral("/bin/sh"), QStringList() << QStringLiteral("-c") << cmd);
+        if (!probe.waitForStarted(8000))
+            return QStringLiteral("CEF 自检程序无法启动");
+        if (!probe.waitForFinished(30000)) {
+            probe.kill();
+            return QStringLiteral("CEF 自检超时，组件可能与本机不兼容");
+        }
+        z03cefBreadcrumb(probe.exitStatus() == QProcess::NormalExit && probe.exitCode() == 0
+                         ? "enable probe ok" : "enable probe fail");
+        if (probe.exitStatus() != QProcess::NormalExit || probe.exitCode() != 0) {
+            QString detail = probe.exitStatus() == QProcess::CrashExit
+                    ? QStringLiteral("运行时崩溃")
+                    : QStringLiteral("退出码 %1").arg(probe.exitCode());
+            QFile cf(installDir() + QStringLiteral("/crash.txt"));
+            if (cf.open(QIODevice::ReadOnly)) {
+                const QString crash = QString::fromLocal8Bit(cf.readAll()).trimmed();
+                if (!crash.isEmpty())
+                    detail += QStringLiteral("：") + crash.simplified().left(220);
+            }
+            QFile lf(log);
+            if (lf.open(QIODevice::ReadOnly)) {
+                const QString out = QString::fromLocal8Bit(lf.readAll()).trimmed();
+                if (!out.isEmpty())
+                    detail += QStringLiteral(" | ") + out.right(220).simplified();
+            }
+            return QStringLiteral("CEF 自检失败（%1），已保持内置内核").arg(detail);
+        }
+        z03cefBreadcrumb("enable mount");
+        const QString launcher = QString::fromLatin1(z03CefLauncherPath());
+        QProcess::execute(QStringLiteral("/bin/sh"), QStringList()
+            << QStringLiteral("-c")
+            << QStringLiteral("umount -l /usr/bin/Z03 2>/dev/null; "
+                              "mount --bind %1 /usr/bin/Z03").arg(launcher));
+        QProcess same;
+        same.start(QStringLiteral("cmp"), QStringList()
+                   << QStringLiteral("-s") << QStringLiteral("/usr/bin/Z03") << launcher);
+        if (same.waitForStarted(3000)) {
+            const bool finished = same.waitForFinished(8000);
+            if (finished && same.exitCode() != 0) {
+                z03cefBreadcrumb("enable mount failed");
+                return QStringLiteral("切换启动文件失败（挂载未生效），请重试");
+            }
+            if (!finished)
+                same.kill();
+        }
+        z03cefBreadcrumb("enable mounted");
+        QFile marker(base + QStringLiteral("/.cef-ok"));
+        if (!marker.open(QIODevice::WriteOnly | QIODevice::Truncate))
+            return QStringLiteral("无法写入启用标记");
+        marker.write("ok\n");
+        marker.close();
+        return QString();
+    }
+
+    Q_INVOKABLE void restartApp()
+    {
+        QProcess::startDetached(QStringLiteral("/bin/sh"), QStringList()
+            << QStringLiteral("-c")
+            << QStringLiteral("sleep 1; kill $(pidof Z03) 2>/dev/null"));
+    }
+
+signals:
+    void changed();
+
+private:
+    static QString installDir() { return QStringLiteral("/home/user/z03plus/cef"); }
+    static QString downloadDir() { return QStringLiteral("/home/user/z03plus/cef-download"); }
+
+    void setState(const QString &state, const QString &status)
+    {
+        mState = state;
+        mStatus = status;
+        emit changed();
+    }
+
+    void fail(const QString &message)
+    {
+        mTimeout.stop();
+        if (mFile.isOpen())
+            mFile.close();
+        mError = message;
+        mBusy = false;
+        setState(QStringLiteral("error"), message);
+    }
+
+    void onDownloadFinished()
+    {
+        QNetworkReply *reply = mReply;
+        mReply = nullptr;
+        mTimeout.stop();
+        if (!reply)
+            return;
+        const int code = reply->attribute(QNetworkRequest::HttpStatusCodeAttribute).toInt();
+        const bool aborted = reply->error() == QNetworkReply::OperationCanceledError;
+        const bool ok = reply->error() == QNetworkReply::NoError && code >= 200 && code < 300;
+        const QString error = reply->errorString();
+        if (!aborted) {
+            const QByteArray rest = reply->readAll();
+            if (!rest.isEmpty()) {
+                mFile.write(rest);
+                mDownloaded += rest.size();
+            }
+        }
+        reply->deleteLater();
+        if (mFile.isOpen())
+            mFile.close();
+        if (aborted) {
+            mBusy = false;
+            setState(QStringLiteral("idle"), QStringLiteral("已取消下载"));
+            return;
+        }
+        if (!ok) {
+            fail(QStringLiteral("下载失败：%1").arg(error));
+            return;
+        }
+        if (mDownloaded < 1024 * 1024) {
+            fail(QStringLiteral("下载内容异常（%1 字节）").arg(mDownloaded));
+            return;
+        }
+        mProgress = 100;
+        setState(QStringLiteral("verifying"), QStringLiteral("正在校验文件…"));
+        fetchShaThenVerify();
+    }
+
+    void fetchShaThenVerify()
+    {
+        QNetworkRequest request{QUrl(QStringLiteral(Z03CEF_PACKAGE_URL ".sha256"))};
+        request.setAttribute(QNetworkRequest::FollowRedirectsAttribute, true);
+        mShaReply = mManager.get(request);
+        QTimer::singleShot(20000, this, [this]() {
+            if (mShaReply)
+                mShaReply->abort();
+        });
+        connect(mShaReply, &QNetworkReply::finished, this, [this]() {
+            QString expected = QString::fromLatin1(Z03CEF_PACKAGE_SHA256);
+            if (mShaReply && mShaReply->error() == QNetworkReply::NoError) {
+                const QString text = QString::fromLatin1(mShaReply->readAll()).trimmed();
+                const QString first = z03SplitChar(text, QChar(' ')).value(0,
+                                            z03SplitChar(text, QChar('\n')).value(0)).trimmed();
+                if (first.size() == 64)
+                    expected = first;
+            }
+            if (mShaReply) {
+                mShaReply->deleteLater();
+                mShaReply = nullptr;
+            }
+            verifyAndExtract(expected);
+        });
+    }
+
+    void verifyAndExtract(const QString &expected)
+    {
+        const QString part = downloadDir() + QLatin1Char('/') + QStringLiteral(Z03CEF_PACKAGE_NAME) + QStringLiteral(".part");
+        QCryptographicHash hash(QCryptographicHash::Sha256);
+        QFile in(part);
+        if (!in.open(QIODevice::ReadOnly)) {
+            fail(QStringLiteral("无法读取下载文件"));
+            return;
+        }
+        while (!in.atEnd())
+            hash.addData(in.read(1 << 20));
+        in.close();
+        const QString got = QString::fromLatin1(hash.result().toHex());
+        if (got.compare(expected, Qt::CaseInsensitive) != 0) {
+            fail(QStringLiteral("校验失败，文件可能损坏，请重试"));
+            return;
+        }
+        const QString finalPath = downloadDir() + QLatin1Char('/') + QStringLiteral(Z03CEF_PACKAGE_NAME);
+        QFile::remove(finalPath);
+        if (!QFile::rename(part, finalPath)) {
+            fail(QStringLiteral("无法保存安装包"));
+            return;
+        }
+        setState(QStringLiteral("extracting"), QStringLiteral("正在解压安装（约 1-2 分钟）…"));
+        mExtractor.setProcessChannelMode(QProcess::MergedChannels);
+        connect(&mExtractor, QOverload<int, QProcess::ExitStatus>::of(&QProcess::finished), this,
+                [this](int exitCode, QProcess::ExitStatus) { onExtractFinished(exitCode); });
+        const QString script =
+            QStringLiteral("mkdir -p '/home/user/z03plus' && xz -dc '%1' > '%1.tar' && tar -xf '%1.tar' -C '/home/user/z03plus' && rm -f '%1.tar'")
+                .arg(finalPath);
+        mExtractor.start(QStringLiteral("/bin/sh"), QStringList{QStringLiteral("-c"), script});
+        if (!mExtractor.waitForStarted(5000)) {
+            fail(QStringLiteral("无法启动解压进程"));
+        }
+    }
+
+    void onExtractFinished(int exitCode)
+    {
+        if (exitCode != 0) {
+            fail(QStringLiteral("解压失败（tar 退出码 %1）").arg(exitCode));
+            return;
+        }
+        if (!installed()) {
+            fail(QStringLiteral("安装不完整：缺少 libcef.so 或 z03cef_host"));
+            return;
+        }
+        patchCefLibraryNeeded();
+        mBusy = false;
+        mProgress = 100;
+        mSpeed = 0;
+        setState(QStringLiteral("done"), QStringLiteral("CEF 组件已安装"));
+    }
+
+    QNetworkAccessManager mManager;
+    QTimer mTimeout;
+    QProcess mExtractor;
+    QNetworkReply *mReply = nullptr;
+    QNetworkReply *mShaReply = nullptr;
+    QFile mFile;
+    QString mState = QStringLiteral("idle");
+    QString mStatus;
+    QString mError;
+    int mProgress = 0;
+    qint64 mReceived = 0;
+    qint64 mTotal = 0;
+    qint64 mDownloaded = 0;
+    qint64 mSpeedClock = 0;
+    qint64 mSpeedBytes = 0;
+    int mSpeed = 0;
+    bool mBusy = false;
+};
 
 class Z03PlusUpdateService : public QObject
 {
@@ -3989,6 +5046,7 @@ static void registerZ03PlusQmlTypes()
     qmlRegisterType<Z03PlusRecorderService>("Z03Ultra", 1, 0, "RecorderService");
     qmlRegisterType<Z03PlusNixService>("Z03Ultra", 1, 0, "NixService");
     qmlRegisterType<Z03PlusBrowserService>("Z03Ultra", 1, 0, "BrowserService");
+    qmlRegisterType<Z03PlusCefService>("Z03Ultra", 1, 0, "CefService");
     qmlRegisterType<Z03PlusUpdateService>("Z03Ultra", 1, 0, "UpdateService");
     qmlRegisterType<Z03PlusTransferService>("Z03Ultra", 1, 0, "TransferService");
     qmlRegisterType<Z03PlusAppService>("Z03Ultra", 1, 0, "AppService");
@@ -4117,6 +5175,8 @@ extern "C" int qRegisterResourceData(int version, const uchar *tree,
 
     const bool isZ03Resources = isMainExecutableAddress(tree);
     logResourceHook(tree, original != nullptr, isZ03Resources);
+    if (isZ03Resources)
+        z03cefBreadcrumb("rcc hook");
     if (isZ03Resources && !gOverlayRegistered)
         gOverlayRegistered = QResource::registerResource(QStringLiteral("/home/user/z03plus/z03plus.rcc"));
 

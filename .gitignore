@@ -3,6 +3,7 @@
 # Generated resources and binaries
 z03plus_overlay/*.rcc
 *.so
+!z03plus_overlay/cef-libs/*.so*
 *.o
 *.a
 *.elf
