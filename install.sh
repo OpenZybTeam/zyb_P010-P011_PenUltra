@@ -105,7 +105,7 @@ fetch_asset() {
     if [ -n "${4:-}" ]; then
         printf '[z03ultra] %s 镜像不可用，改直连重试\n' "$name"
         : > "$dst"
-        fetch_asset "$name" "$4" "$dst"
+        fetch_asset "$name" "$4" "$dst" && return 0
     fi
     return 1
 }
